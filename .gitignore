@@ -1,0 +1,84 @@
+# ============================================
+# Dependencies
+# ============================================
+node_modules/
+
+# ============================================
+# Next.js build output
+# ============================================
+.next/
+out/
+
+# ============================================
+# Environment variables
+# Keep .env.example as a template for the team
+# ============================================
+.env
+.env.*
+!.env.example
+
+# ============================================
+# Prisma — local generated client
+# The generated client is derived from schema.prisma
+# and should be regenerated via `npx prisma generate`
+# ============================================
+prisma/generated/
+prisma/*.db
+prisma/*.db-journal
+
+# ============================================
+# Logs
+# ============================================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ============================================
+# TypeScript / Next.js cache & incremental
+# ============================================
+*.tsbuildinfo
+next-env.d.ts
+
+# ============================================
+# Vercel
+# ============================================
+.vercel
+
+# ============================================
+# Testing coverage
+# ============================================
+coverage/
+
+# ============================================
+# OS-generated junk
+# ============================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ============================================
+# SpecStory — local history / analytics
+# ============================================
+.specstory/
+
+# ============================================
+# IDE — local user preferences
+# Shared workspace configs (e.g. recommended
+# extensions) can be added back explicitly
+# ============================================
+.vscode/settings.json
+.vscode/.browse.c_cpp.db*
+.idea/
+
+# Cursor local cache
+.cursor/
+
+# ============================================
+# Misc
+# ============================================
+*.swp
+*.swo
+*~

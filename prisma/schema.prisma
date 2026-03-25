@@ -1,0 +1,124 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// TODO: When Auth0 is integrated, `id` will map to Auth0's `sub` claim.
+// The UserProfile.email will be synced from Auth0 user metadata.
+model UserProfile {
+  id              String           @id @default(cuid())
+  name            String
+  email           String           @unique
+  defaultPersona  String           @default("professional")
+  automationLevel AutomationLevel  @default(DRAFT_ONLY)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  accounts    ConnectedAccount[]
+  styleCards  StyleCard[]
+  sendLogs    SendLog[]
+  messages    MessageItem[]
+}
+
+// TODO: When real OAuth providers are connected, store the provider's
+// access/refresh tokens via Auth0 Token Vault (not directly here).
+// `providerAccountId` will hold the external account identifier.
+model ConnectedAccount {
+  id                String        @id @default(cuid())
+  provider          Provider
+  providerAccountId String?       // TODO: external provider's user/account ID
+  scopes            String[]
+  status            AccountStatus @default(PENDING)
+  lastSyncAt        DateTime?
+  createdAt         DateTime      @default(now())
+
+  userId String
+  user   UserProfile @relation(fields: [userId], references: [id])
+}
+
+model StyleCard {
+  id              String   @id @default(cuid())
+  persona         String
+  toneRules       String[]
+  bannedPhrases   String[]
+  signoffPatterns String[]
+  emojiPreference String   @default("minimal")
+  sentenceStyle   String   @default("concise")
+  createdAt       DateTime @default(now())
+
+  userId   String
+  user     UserProfile   @relation(fields: [userId], references: [id])
+  examples StyleExample[]
+}
+
+model StyleExample {
+  id             String   @id @default(cuid())
+  persona        String
+  sourceProvider Provider
+  text           String
+
+  styleCardId String
+  styleCard   StyleCard @relation(fields: [styleCardId], references: [id])
+}
+
+// TODO: `externalMessageId` and `externalThreadId` will store the provider's
+// native message/thread IDs (e.g., Gmail message ID, Slack ts) for syncing.
+model MessageItem {
+  id                String      @id @default(cuid())
+  provider          Provider
+  externalMessageId String?     // TODO: Gmail messageId / Slack message ts
+  externalThreadId  String?     // TODO: Gmail threadId / Slack channel+thread_ts
+  threadId          String
+  sender            String
+  subject           String?
+  snippet           String
+  content           String
+  timestamp         DateTime
+  riskLevel         RiskLevel   @default(LOW)
+  status            String      @default("unread")
+  createdAt         DateTime    @default(now())
+
+  userId   String
+  user     UserProfile @relation(fields: [userId], references: [id])
+  sendLogs SendLog[]
+}
+
+model SendLog {
+  id             String   @id @default(cuid())
+  mode           String
+  approvedByUser Boolean  @default(true)
+  sentAt         DateTime @default(now())
+  result         String
+
+  messageId String
+  message   MessageItem @relation(fields: [messageId], references: [id])
+  userId    String
+  user      UserProfile @relation(fields: [userId], references: [id])
+}
+
+enum Provider {
+  gmail
+  slack
+}
+
+enum AutomationLevel {
+  DRAFT_ONLY
+  ONE_CLICK
+  AUTO_ALLOWLIST
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AccountStatus {
+  CONNECTED
+  DISCONNECTED
+  PENDING
+}
