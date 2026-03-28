@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { SessionUser } from "@/lib/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -9,8 +10,21 @@ const navItems = [
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
-export function Sidebar() {
+interface Props {
+  user: SessionUser | null;
+}
+
+export function Sidebar({ user }: Props) {
   const pathname = usePathname();
+
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((w) => w[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : null;
 
   return (
     <aside className="w-56 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col h-screen sticky top-0">
@@ -41,17 +55,37 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* TODO: Replace with Auth0 user profile */}
       <div className="p-4 border-t border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-            DU
+        {user ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              {user.picture ? (
+                <img src={user.picture} alt="" className="w-8 h-8 rounded-full" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
+                  {initials}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{user.name ?? "User"}</p>
+                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+              </div>
+            </div>
+            <a
+              href="/auth/logout"
+              className="block text-center text-xs text-gray-500 hover:text-red-600 transition-colors"
+            >
+              Sign out
+            </a>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 truncate">Demo User</p>
-            <p className="text-xs text-gray-500 truncate">demo@pollux.dev</p>
-          </div>
-        </div>
+        ) : (
+          <a
+            href="/auth/login"
+            className="block w-full text-center px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Sign in
+          </a>
+        )}
       </div>
     </aside>
   );

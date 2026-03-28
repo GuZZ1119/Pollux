@@ -70,3 +70,10 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: string;
 }
+
+export interface SessionUser {
+  sub: string;
+  name?: string;
+  email?: string;
+  picture?: string;
+}

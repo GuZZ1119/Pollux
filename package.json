@@ -12,22 +12,26 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@auth0/nextjs-auth0": "^4.16.1",
+    "@prisma/client": "^6",
+    "google-auth-library": "^10.6.2",
+    "googleapis": "^171.4.0",
     "next": "^15",
+    "openai": "^6.33.0",
     "react": "^19",
-    "react-dom": "^19",
-    "@prisma/client": "^6"
+    "react-dom": "^19"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5",
-    "tailwindcss": "^4",
-    "@tailwindcss/postcss": "^4",
-    "postcss": "^8",
     "eslint": "^9",
     "eslint-config-next": "^15",
-    "@eslint/eslintrc": "^3",
-    "prisma": "^6"
+    "postcss": "^8",
+    "prisma": "^6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

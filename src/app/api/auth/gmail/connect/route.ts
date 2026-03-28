@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
-import { getAggregatedInbox } from "@/lib/services/inbox-service";
+import { getGmailAuthUrl } from "@/lib/gmail/oauth";
 
 export async function GET() {
   try {
     const session = await auth0.getSession();
-    const userId = session?.user.sub ?? undefined;
-    const messages = await getAggregatedInbox(userId);
-    return NextResponse.json({ success: true, data: messages });
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
+    }
+
+    const state = session.user.sub;
+    const url = getGmailAuthUrl(state);
+    return NextResponse.redirect(url);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

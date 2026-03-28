@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MessageItem, ReplyCandidate, ApiResponse } from "@/lib/types";
+import type { MessageItem, ReplyCandidate } from "@/lib/types";
 import { RiskBadge } from "@/components/shared/status-badge";
 import { ProviderIcon } from "@/components/shared/provider-icon";
 import { ReplyCandidateCard } from "@/components/reply/reply-candidate-card";
@@ -15,23 +15,37 @@ export function MessageDetail({ message }: Props) {
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [replySource, setReplySource] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     setLoading(true);
     setSendStatus(null);
+    setGenerateError(null);
     try {
       const res = await fetch("/api/reply/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId: message.id }),
+        body: JSON.stringify({
+          messageId: message.id,
+          content: message.content,
+          sender: message.sender,
+          subject: message.subject,
+          provider: message.provider,
+        }),
       });
-      const data: ApiResponse<ReplyCandidate[]> = await res.json();
+      const data = await res.json();
       if (data.success && data.data) {
-        setCandidates(data.data);
+        setCandidates(data.data as ReplyCandidate[]);
+        setReplySource(data.source ?? null);
         setSelectedCandidate(null);
         setReplyText("");
+      } else {
+        setGenerateError(data.error ?? "Failed to generate replies");
       }
+    } catch {
+      setGenerateError("Network error — could not reach the server");
     } finally {
       setLoading(false);
     }
@@ -49,10 +63,24 @@ export function MessageDetail({ message }: Props) {
       const res = await fetch("/api/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId: message.id, replyText }),
+        body: JSON.stringify({
+          messageId: message.id,
+          replyText,
+          provider: message.provider,
+          threadId: message.threadId,
+          sender: message.sender,
+          subject: message.subject,
+        }),
       });
-      const data: ApiResponse = await res.json();
-      setSendStatus(data.success ? "Sent successfully (mock)" : `Error: ${data.error}`);
+      const data = await res.json();
+      if (data.success) {
+        const isReal = data.data?.provider === "gmail" && data.data?.externalMessageId && !data.data.externalMessageId.startsWith("mock-");
+        setSendStatus(isReal ? "Sent via Gmail" : "Sent (mock)");
+      } else {
+        setSendStatus(`Error: ${data.error}`);
+      }
+    } catch {
+      setSendStatus("Network error — could not send");
     } finally {
       setLoading(false);
     }
@@ -79,22 +107,40 @@ export function MessageDetail({ message }: Props) {
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          {message.content && message.content !== "(No content)" ? (
+            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          ) : (
+            <p className="text-sm text-gray-400 italic">No text content available for this message.</p>
+          )}
         </div>
 
         {/* Reply section */}
         <div className="space-y-3">
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-          >
-            {loading ? "Generating..." : "Generate Replies"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleGenerate}
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {loading ? "Generating..." : "Generate Replies"}
+            </button>
+            {generateError && (
+              <span className="text-sm text-red-500">{generateError}</span>
+            )}
+          </div>
 
           {candidates.length > 0 && (
             <div className="space-y-2">
-              <p className="text-sm font-medium text-gray-700">Reply Candidates</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-gray-700">Reply Candidates</p>
+                {replySource && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${
+                    replySource === "openai" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {replySource === "openai" ? "AI generated" : "mock fallback"}
+                  </span>
+                )}
+              </div>
               {candidates.map((c) => (
                 <ReplyCandidateCard
                   key={c.id}

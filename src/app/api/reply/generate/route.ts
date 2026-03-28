@@ -4,14 +4,23 @@ import { generateReplies } from "@/lib/services/reply-service";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { messageId } = body;
+    const { messageId, content, sender, subject, provider } = body;
 
-    if (!messageId) {
-      return NextResponse.json({ success: false, error: "messageId is required" }, { status: 400 });
+    if (!messageId || !content) {
+      return NextResponse.json(
+        { success: false, error: "messageId and content are required" },
+        { status: 400 }
+      );
     }
 
-    const candidates = await generateReplies(messageId);
-    return NextResponse.json({ success: true, data: candidates });
+    const { candidates, source } = await generateReplies({
+      content,
+      sender: sender ?? "Unknown",
+      subject,
+      provider: provider ?? "gmail",
+    });
+
+    return NextResponse.json({ success: true, data: candidates, source });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

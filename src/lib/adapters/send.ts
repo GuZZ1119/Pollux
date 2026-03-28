@@ -5,15 +5,7 @@ export interface SendResult {
 }
 
 export interface SendAdapter {
-  send(to: string, content: string, threadId?: string): Promise<SendResult>;
-}
-
-// TODO: Replace with real Gmail send via gmail.users.messages.send
-export class MockGmailSendAdapter implements SendAdapter {
-  async send(to: string, content: string, threadId?: string): Promise<SendResult> {
-    console.log(`[MockGmailSend] to=${to}, threadId=${threadId}, length=${content.length}`);
-    return { success: true, externalMessageId: `mock-gmail-sent-${Date.now()}` };
-  }
+  send(to: string, content: string, threadId?: string, subject?: string, inReplyToMessageId?: string): Promise<SendResult>;
 }
 
 // TODO: Replace with real Slack send via chat.postMessage
