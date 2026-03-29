@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { MessageItem, ReplyCandidate } from "@/lib/types";
 import { RiskBadge } from "@/components/shared/status-badge";
 import { ProviderIcon } from "@/components/shared/provider-icon";
@@ -10,14 +10,56 @@ interface Props {
   message: MessageItem;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function MessageDetail({ message }: Props) {
   const [candidates, setCandidates] = useState<ReplyCandidate[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(
+    null,
+  );
   const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [replySource, setReplySource] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [sanitizedHtml, setSanitizedHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setReplyText("");
+    setSendStatus(null);
+    setGenerateError(null);
+    setReplySource(null);
+
+    if (message.htmlContent) {
+      import("dompurify").then((mod) => {
+        const DOMPurify = mod.default;
+        setSanitizedHtml(
+          DOMPurify.sanitize(message.htmlContent!, {
+            ALLOWED_TAGS: [
+              "p", "br", "strong", "em", "b", "i", "u", "a",
+              "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+              "blockquote", "pre", "code", "table", "thead", "tbody",
+              "tr", "td", "th", "img", "span", "div", "hr", "sup", "sub",
+            ],
+            ALLOWED_ATTR: [
+              "href", "target", "rel", "src", "alt", "width", "height",
+              "style", "class", "colspan", "rowspan",
+            ],
+            ALLOW_DATA_ATTR: false,
+            ADD_ATTR: ["target"],
+          }),
+        );
+      });
+    } else {
+      setSanitizedHtml(null);
+    }
+  }, [message]);
 
   const handleGenerate = async () => {
     setLoading(true);
@@ -74,10 +116,23 @@ export function MessageDetail({ message }: Props) {
       });
       const data = await res.json();
       if (data.success) {
-        const isReal = data.data?.provider === "gmail" && data.data?.externalMessageId && !data.data.externalMessageId.startsWith("mock-");
-        setSendStatus(isReal ? "Sent via Gmail" : "Sent (mock)");
+        const channel = data.data?.sendChannel;
+        if (channel === "gmail_api") {
+          setSendStatus("Sent via Gmail");
+        } else if (channel === "mock") {
+          setSendStatus(
+            "Sent (mock — not delivered). Gmail tokens may have expired; try reconnecting in Settings.",
+          );
+        } else {
+          setSendStatus("Sent");
+        }
       } else {
-        setSendStatus(`Error: ${data.error}`);
+        const channel = data.data?.sendChannel;
+        if (channel === "gmail_api_error") {
+          setSendStatus(`Gmail send failed: ${data.error}`);
+        } else {
+          setSendStatus(`Send failed: ${data.error}`);
+        }
       }
     } catch {
       setSendStatus("Network error — could not send");
@@ -100,19 +155,71 @@ export function MessageDetail({ message }: Props) {
           <span className="font-medium text-gray-900">{message.sender}</span>
           <RiskBadge level={message.riskLevel} />
         </div>
-        {message.subject && <h2 className="text-lg font-semibold text-gray-900 mt-1">{message.subject}</h2>}
+        {message.subject && (
+          <h2 className="text-lg font-semibold text-gray-900 mt-1">
+            {message.subject}
+          </h2>
+        )}
         <p className="text-xs text-gray-400 mt-1">{time}</p>
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          {message.content && message.content !== "(No content)" ? (
-            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{message.content}</p>
+          {sanitizedHtml ? (
+            <div
+              className="prose prose-sm max-w-none text-gray-800 [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_img]:rounded"
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+            />
+          ) : message.content && message.content !== "(No content)" ? (
+            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+              {message.content}
+            </p>
           ) : (
-            <p className="text-sm text-gray-400 italic">No text content available for this message.</p>
+            <p className="text-sm text-gray-400 italic">
+              No text content available for this message.
+            </p>
           )}
         </div>
+
+        {/* Attachments */}
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="mb-4 border border-gray-200 rounded-lg p-3">
+            <p className="text-xs font-medium text-gray-500 mb-2">
+              Attachments ({message.attachments.length})
+            </p>
+            <div className="space-y-1.5">
+              {message.attachments.map((att, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 rounded px-3 py-2"
+                >
+                  <svg
+                    className="w-4 h-4 text-gray-400 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                    />
+                  </svg>
+                  <span className="truncate flex-1">{att.filename}</span>
+                  <span className="text-xs text-gray-400 shrink-0">
+                    {att.mimeType.split("/").pop()} ·{" "}
+                    {formatFileSize(att.size)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-2 italic">
+              Attachment download coming soon
+            </p>
+          </div>
+        )}
 
         {/* Reply section */}
         <div className="space-y-3">
@@ -132,11 +239,17 @@ export function MessageDetail({ message }: Props) {
           {candidates.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-gray-700">Reply Candidates</p>
+                <p className="text-sm font-medium text-gray-700">
+                  Reply Candidates
+                </p>
                 {replySource && (
-                  <span className={`text-xs px-1.5 py-0.5 rounded ${
-                    replySource === "openai" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
-                  }`}>
+                  <span
+                    className={`text-xs px-1.5 py-0.5 rounded ${
+                      replySource === "openai"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-500"
+                    }`}
+                  >
                     {replySource === "openai" ? "AI generated" : "mock fallback"}
                   </span>
                 )}
@@ -172,7 +285,15 @@ export function MessageDetail({ message }: Props) {
                 </button>
                 {sendStatus && (
                   <span
-                    className={`text-sm ${sendStatus.startsWith("Sent") ? "text-green-600" : "text-red-600"}`}
+                    className={`text-sm ${
+                      sendStatus === "Sent via Gmail"
+                        ? "text-green-600"
+                        : sendStatus.startsWith("Sent (mock")
+                          ? "text-yellow-600"
+                          : sendStatus.startsWith("Sent")
+                            ? "text-green-600"
+                            : "text-red-600"
+                    }`}
                   >
                     {sendStatus}
                   </span>

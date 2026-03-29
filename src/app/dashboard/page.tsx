@@ -29,7 +29,7 @@ export default async function DashboardPage() {
 
   const [accounts, messages] = await Promise.all([
     getConnectedAccounts(user.sub),
-    getAggregatedInbox(user.sub),
+    getAggregatedInbox(user.sub, { filter: "primary" }),
   ]);
 
   const connectedCount = accounts.filter((a) => a.status === "CONNECTED").length;
@@ -97,9 +97,13 @@ export default async function DashboardPage() {
           <li>✅ Auth0 Universal Login integration</li>
           <li>{gmailAccount?.status === "CONNECTED" ? "✅" : "☐"} Gmail OAuth connection</li>
           <li>{gmailAccount?.status === "CONNECTED" ? "✅" : "☐"} Real Gmail API inbox sync</li>
-          <li>☐ OpenAI-powered reply generation with StyleCard</li>
+          <li>✅ OpenAI-powered reply generation with StyleCard</li>
+          <li>✅ Rule-based risk classification engine</li>
+          <li>✅ HTML email rendering + attachment metadata</li>
+          <li>✅ Ad/promotion email filtering (Gmail category)</li>
+          <li>✅ Event logging system</li>
           <li>☐ Slack Events API for real-time messages</li>
-          <li>☐ Risk scoring engine</li>
+          <li>☐ ML-based risk scoring model</li>
         </ul>
       </div>
     </div>

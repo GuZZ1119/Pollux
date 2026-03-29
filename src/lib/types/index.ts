@@ -36,6 +36,13 @@ export interface StyleExample {
   text: string;
 }
 
+export interface Attachment {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+}
+
 export interface MessageItem {
   id: string;
   provider: Provider;
@@ -44,9 +51,17 @@ export interface MessageItem {
   subject?: string;
   snippet: string;
   content: string;
+  htmlContent?: string;
+  attachments?: Attachment[];
   timestamp: string;
   riskLevel: RiskLevel;
   status: string;
+}
+
+export interface InboxFetchOptions {
+  limit?: number;
+  filter?: "primary" | "all";
+  cursor?: string;
 }
 
 export interface ReplyCandidate {

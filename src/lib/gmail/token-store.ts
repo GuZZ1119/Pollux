@@ -1,6 +1,13 @@
-// In-memory token store for hackathon MVP.
-// TODO: Migrate to database (ConnectedAccount table) or Auth0 Token Vault.
-// Tokens are lost on server restart — acceptable for MVP demo.
+/**
+ * In-memory token store for hackathon MVP.
+ *
+ * Uses globalThis to survive Next.js dev server HMR (Hot Module Replacement).
+ * Without globalThis, `const store = new Map()` is re-executed on every HMR
+ * cycle, clearing all stored tokens. This is the same pattern Prisma recommends
+ * for PrismaClient in Next.js dev mode.
+ *
+ * TODO: Migrate to database (ConnectedAccount table) for production persistence.
+ */
 
 export interface GmailTokens {
   accessToken: string;
@@ -10,7 +17,15 @@ export interface GmailTokens {
   email?: string;
 }
 
-const store = new Map<string, GmailTokens>();
+const globalStore = globalThis as unknown as {
+  __polluxGmailTokenStore?: Map<string, GmailTokens>;
+};
+
+if (!globalStore.__polluxGmailTokenStore) {
+  globalStore.__polluxGmailTokenStore = new Map();
+}
+
+const store: Map<string, GmailTokens> = globalStore.__polluxGmailTokenStore;
 
 export function getGmailTokens(userId: string): GmailTokens | null {
   return store.get(userId) ?? null;
@@ -18,6 +33,10 @@ export function getGmailTokens(userId: string): GmailTokens | null {
 
 export function setGmailTokens(userId: string, tokens: GmailTokens): void {
   store.set(userId, tokens);
+  console.log(
+    `[token-store] SET key="${userId}", hasAccess=${Boolean(tokens.accessToken)}, ` +
+    `hasRefresh=${Boolean(tokens.refreshToken)}, storeSize=${store.size}`,
+  );
 }
 
 export function removeGmailTokens(userId: string): void {
@@ -25,7 +44,9 @@ export function removeGmailTokens(userId: string): void {
 }
 
 export function hasGmailConnection(userId: string): boolean {
-  const tokens = store.get(userId);
-  if (!tokens) return false;
-  return true;
+  return store.has(userId);
+}
+
+export function getStoreDebugInfo(): { size: number; keys: string[] } {
+  return { size: store.size, keys: Array.from(store.keys()) };
 }

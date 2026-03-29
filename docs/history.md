@@ -576,6 +576,569 @@ Route 从 Auth0 session 获取 userId 传入 send-service。
 
 ---
 
+## 阶段 3：Inbox 增强 + 风险分类 + Event Log
+
+**状态：✅ 已完成**  
+**完成日期：2026-03-29**
+
+基于阶段 2 的完整 Gmail/OpenAI 接入，对 Inbox 进行 6 项功能增强，全部增量实现，不重构已有结构。
+
+### 3.1 可配置邮件上限
+
+**状态：✅ 已完成**
+
+之前 Gmail adapter 硬编码 `MAX_RESULTS = 20`，Slack mock 固定 3 条，总上限 23 条，不可调整。
+
+现在通过统一配置常量控制整条链路：
+
+| 层级 | 实现 |
+|------|------|
+| 配置源 | `src/lib/config.ts` → `INBOX_MAX_RESULTS`，从 `process.env.INBOX_MAX_RESULTS` 读取，默认 30，上限 100 |
+| Gmail adapter | `fetchMessages(options?)` 使用 `options.limit ?? INBOX_MAX_RESULTS` 作为 `maxResults` |
+| inbox-service | 聚合所有 adapter 结果后 `slice(0, limit)` 截断 |
+| API route | `GET /api/inbox?limit=N&filter=...&cursor=...`，接受查询参数覆盖默认值 |
+| 前端 | 展示 API 返回的全部数据，不二次截断 |
+
+**最终上限**：默认 **30 条**（由 `INBOX_MAX_RESULTS` 控制）。用户可在 `.env.local` 设置 `INBOX_MAX_RESULTS=50` 调整。
+
+API 响应新增 `meta` 字段：
+```json
+{ "success": true, "data": [...], "meta": { "count": 25, "filter": "primary", "cursor": null } }
+```
+
+`cursor` 参数已在接口层预留，当前未实现完整分页，后续可扩展。
+
+#### 新建文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/lib/config.ts` | 全局配置常量（`INBOX_MAX_RESULTS`） |
+
+#### 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/types/index.ts` | 新增 `InboxFetchOptions`（limit / filter / cursor） |
+| `src/lib/adapters/inbox.ts` | `InboxAdapter.fetchMessages()` 新增 `options?: InboxFetchOptions` 参数 |
+| `src/lib/adapters/gmail-inbox.ts` | 使用 config limit 替代硬编码 20 |
+| `src/lib/services/inbox-service.ts` | 接受 `InboxFetchOptions`，聚合后统一 limit 截断 |
+| `src/app/api/inbox/route.ts` | 解析 `?limit=` / `?filter=` / `?cursor=` 查询参数 |
+| `.env.example` | 新增 `INBOX_MAX_RESULTS` 条目 |
+
+### 3.2 Inbox 指标实时计算 + 风险分类引擎
+
+**状态：✅ 已完成**
+
+#### 3.2.1 指标计算
+
+之前 Inbox 顶部只显示 `N messages — M Gmail (live) · K Slack (mock)`。
+
+现在从返回邮件列表实时计算 4 个指标：
+
+| 指标 | 定义 | 数据源 |
+|------|------|--------|
+| Messages | 当前返回列表总条数 | `messages.length` |
+| Unread | `status === "unread"` 的邮件数 | Gmail: `labelIds` 含 `UNREAD`；Slack mock: 预设值 |
+| High Risk | `riskLevel === "HIGH"` 的邮件数 | 风险分类函数输出 |
+| Medium | `riskLevel === "MEDIUM"` 的邮件数 | 风险分类函数输出 |
+
+**更新链路**：`fetchMessages()` → `setMessages()` → 指标自动重算。触发时机：页面加载、手动刷新、切换 filter。
+
+#### 3.2.2 风险分类引擎
+
+位置：`src/lib/services/risk-service.ts`
+
+独立函数 `classifyRisk(input: RiskInput): RiskLevel`，扫描 subject + content，基于正则关键词匹配：
+
+| 等级 | 触发关键词 |
+|------|------------|
+| HIGH | invoice, payment, wire transfer, bank account, overdue, urgent, asap, deadline, contract, nda, legal, lawsuit, interview, offer letter, confidential, immediate action, penalty, suspend, terminat, fraud, phishing, verify your account |
+| MEDIUM | by {weekday}/eod/cob, action required, please respond, follow up, time sensitive, due date, expir, remind, schedul, review needed, board meeting, escalat, blocking, approval needed |
+| LOW | 其余所有 |
+
+**设计决策**：函数签名和输入结构已抽象，后续可直接替换为 ML 模型调用，不影响调用层。
+
+之前真实 Gmail 邮件全部硬编码为 `LOW`，现在每封邮件在 `GmailInboxAdapter` 中调用 `classifyRisk()` 实时判定。Mock Slack 消息保持原有预设 riskLevel 不变。
+
+#### 新建文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/lib/services/risk-service.ts` | 独立风险分类函数，正则关键词匹配 |
+
+#### 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/adapters/gmail-inbox.ts` | 导入 `classifyRisk()`，替代硬编码 `"LOW"` |
+| `src/app/inbox/page.tsx` | 新增指标栏（Messages / Unread / High Risk / Medium） |
+
+### 3.3 HTML 邮件渲染 + 附件 Metadata
+
+**状态：✅ 已完成**
+
+#### 3.3.1 HTML 内容支持
+
+之前 MIME 解析只走纯文本链路：`text/plain` 优先，`text/html` 被 `stripHtml()` 转为纯文本。所有邮件以 `whitespace-pre-wrap` 纯文本展示。
+
+现在同时提取两种内容：
+
+| 字段 | 类型 | 来源 |
+|------|------|------|
+| `content` | `string` | `extractTextBody()` — 纯文本，保持向后兼容 |
+| `htmlContent` | `string?` | `extractHtmlBody()` — 原始 HTML（新增） |
+
+MIME 解析层新增：
+- `extractHtmlBody()` — 递归查找 `text/html` MIME part 并 base64url 解码
+- `extractAttachments()` — 递归遍历所有 part，提取有 `attachmentId` 的附件 metadata
+
+前端渲染逻辑：
+1. **优先渲染 HTML**：如果 `htmlContent` 存在，使用 DOMPurify sanitize 后通过 `dangerouslySetInnerHTML` 渲染，配合 `prose` 样式
+2. **Fallback 纯文本**：如果无 HTML，显示 `content` 纯文本
+3. **空内容兜底**：显示 italic 提示
+
+DOMPurify 配置：
+- 白名单 tag：p, br, strong, em, b, i, u, a, ul, ol, li, h1-h6, blockquote, pre, code, table, thead, tbody, tr, td, th, img, span, div, hr, sup, sub
+- 白名单 attr：href, target, rel, src, alt, width, height, style, class, colspan, rowspan
+- 禁止 data 属性
+- 使用动态 `import("dompurify")` 避免 SSR 问题
+
+#### 3.3.2 附件 Metadata
+
+`MessageItem` 新增 `attachments?: Attachment[]`：
+
+```ts
+interface Attachment {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+}
+```
+
+前端展示：
+- 有附件时显示 "Attachments (N)" 列表
+- 每项显示：回形针图标 + 文件名 + 类型缩写 + 文件大小
+- 底部提示 "Attachment download coming soon"
+
+附件下载 API 骨架：
+- `GET /api/attachments/[messageId]/[attachmentId]` — 当前返回 501
+- 注释中包含完整实现步骤（strip gmail- prefix → Gmail API attachments.get → base64url decode → binary response）
+
+#### 新建文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/app/api/attachments/[messageId]/[attachmentId]/route.ts` | 附件下载 API 骨架（501 + 实现步骤注释） |
+
+#### 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/types/index.ts` | 新增 `Attachment` 接口；`MessageItem` 新增 `htmlContent` + `attachments` |
+| `src/lib/gmail/parse.ts` | 新增 `extractHtmlBody()`、`extractAttachments()`；导出 `decodeBase64Url()` |
+| `src/lib/adapters/gmail-inbox.ts` | 调用新解析函数，填充 `htmlContent` + `attachments` |
+| `src/components/inbox/message-detail.tsx` | DOMPurify HTML 渲染 + 附件列表展示 |
+
+#### 新增依赖
+
+| 包 | 用途 |
+|----|------|
+| `dompurify` | HTML sanitize（白名单过滤 XSS） |
+| `@types/dompurify` | TypeScript 类型定义 |
+
+### 3.4 广告/促销邮件自动过滤
+
+**状态：✅ 已完成**
+
+基于 Gmail category 过滤，在 adapter 拉取层实现，不在前端过滤。
+
+| 模式 | Gmail API 查询 | 效果 |
+|------|---------------|------|
+| Primary Only（默认） | `q: "category:primary"` | 只拉取重要邮件，过滤 promotions / social / forums / updates |
+| All Inbox | 不加 category 过滤 | 拉取全部 INBOX 邮件 |
+
+前端 toggle：
+- Inbox 左上角 segmented button：「Primary Only」/「All Inbox」
+- 状态通过 `localStorage` 持久化（key: `pollux_inbox_filter`）
+- 默认选中 Primary Only
+- 切换时自动重新拉取邮件
+
+数据流：`localStorage` → `?filter=primary|all` 查询参数 → inbox API → inbox-service → `GmailInboxAdapter` → Gmail API `q` 参数。
+
+Mock Slack adapter 不受 filter 参数影响，始终返回全部 mock 消息。
+
+**后续迁移**：将 filter 偏好从 localStorage 迁移到 DB user preferences，只需替换前端存取逻辑。
+
+#### 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/adapters/gmail-inbox.ts` | 根据 `options.filter` 构造 `q: "category:primary"` |
+| `src/app/inbox/page.tsx` | 新增 filter toggle UI + localStorage 持久化 + 带参数重新请求 |
+
+### 3.5 Event Log 事件记录系统
+
+**状态：✅ 已完成**
+
+#### 3.5.1 架构设计
+
+位置：`src/lib/services/event-log.ts`
+
+内存循环缓冲（max 1000 条），与 token-store.ts 架构一致。提供 3 个函数：
+
+| 函数 | 作用 |
+|------|------|
+| `logEvent(entry)` | 写入一条事件，自动生成 eventId + timestamp |
+| `getEvents(userId?, limit?, eventType?)` | 按条件查询事件列表（最新在前） |
+| `getEventCount()` | 返回总事件数 |
+
+6 种事件类型：
+
+| eventType | 触发位置 | 触发时机 |
+|-----------|----------|----------|
+| `inbox_fetched` | inbox-service（服务端） | 每次聚合 inbox 调用 |
+| `risk_classified` | inbox-service（服务端） | 每次 inbox 聚合后统计风险分布 |
+| `filter_changed` | inbox page（客户端 → POST /api/events） | 用户切换 Primary Only / All Inbox |
+| `message_opened` | inbox page（客户端 → POST /api/events） | 用户点击某封邮件 |
+| `reply_generated` | /api/reply/generate（服务端） | 回复生成完成后 |
+| `reply_sent` | /api/send（服务端） | 回复发送完成后 |
+
+每条事件结构：
+```ts
+{
+  eventId: "evt-1711700000-abc123",
+  eventType: "reply_sent",
+  timestamp: "2026-03-29T10:00:00.000Z",
+  userId: "auth0|abc123",
+  provider: "gmail",
+  messageId: "gmail-19abc...",
+  threadId: "19abc...",
+  metadata: { success: true, externalMessageId: "...", source: "openai" }
+}
+```
+
+#### 3.5.2 REST API
+
+位置：`src/app/api/events/route.ts`
+
+| 方法 | 用途 | 参数 |
+|------|------|------|
+| `GET /api/events` | 查询事件列表 | `?limit=50&type=reply_sent` |
+| `POST /api/events` | 写入事件（前端客户端调用） | body: `{ eventType, provider?, messageId?, threadId?, metadata? }` |
+
+自动从 Auth0 session 获取 userId。
+
+#### 3.5.3 限制与迁移计划
+
+- 内存存储：服务器重启后事件丢失
+- 迁移点：将 `store` 数组替换为 Prisma DB 表操作，保持 `EventLogEntry` 结构不变
+- 建议 DB schema：`EventLog` 表，字段与 `EventLogEntry` 一致，`metadata` 用 JSON 类型
+
+#### 新建文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/lib/services/event-log.ts` | 内存事件日志（循环缓冲 1000 条） |
+| `src/app/api/events/route.ts` | 事件 REST API（GET + POST） |
+
+#### 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/services/inbox-service.ts` | 记录 `inbox_fetched` + `risk_classified` 事件 |
+| `src/app/api/reply/generate/route.ts` | 记录 `reply_generated` 事件 |
+| `src/app/api/send/route.ts` | 记录 `reply_sent` 事件 |
+| `src/app/inbox/page.tsx` | 客户端调用 POST /api/events 记录 `filter_changed` + `message_opened` |
+
+### 3.6 验收结果
+
+| 验收项 | 结果 |
+|--------|------|
+| `next build` 编译通过 | ✅ 零新增错误 |
+| Inbox 默认最多显示 30 条 | ✅ 由 `INBOX_MAX_RESULTS` 控制 |
+| `?limit=N` 可覆盖默认值 | ✅ |
+| 指标栏实时显示 Messages / Unread / High Risk / Medium | ✅ |
+| 真实 Gmail 邮件风险不再全部 LOW | ✅ classifyRisk() 关键词匹配 |
+| HTML 邮件渲染（DOMPurify sanitize） | ✅ 优先 HTML，fallback 纯文本 |
+| 附件 metadata 展示 | ✅ 文件名 + 类型 + 大小 |
+| 附件下载 API 骨架 | ✅ 501 + 实现步骤注释 |
+| Primary Only / All Inbox filter toggle | ✅ Gmail category 过滤 |
+| filter 状态 localStorage 持久化 | ✅ |
+| 6 种事件记录到 event log | ✅ |
+| `GET /api/events` 可查询事件 | ✅ 支持 limit + type 过滤 |
+| Mock Slack 数据未被破坏 | ✅ |
+| 所有页面路由正确 | ✅ 新增 /api/events + /api/attachments/[id]/[id] |
+
+### 3.7 当前明确不包含的内容
+
+- ❌ 完整分页（cursor 参数已预留，未实现翻页逻辑）
+- ❌ 附件真实下载（API 骨架已准备，返回 501）
+- ❌ ML 风险模型（独立函数已抽象，待替换）
+- ❌ Event log 数据库持久化（内存存储，迁移点已标注）
+- ❌ Filter 偏好数据库持久化（localStorage，迁移点已标注）
+
+### 3.8 Bugfix：Gmail 真实发送显示 `Sent (mock)` 问题
+
+**状态：✅ 已修复**  
+**修复日期：2026-03-29**
+
+#### 3.8.1 问题现象
+
+用户在手动测试中发现：
+- 回复候选已正确显示 `AI generated`（OpenAI 链路正常）
+- 点击 Send Reply 后，前端显示 `Sent (mock)` 而非 `Sent via Gmail`
+- 服务端终端日志出现 `[MockSlackSend]`，确认走了 mock 路径
+
+#### 3.8.2 根因分析
+
+`send-service.ts` 中真实 Gmail 发送的前提条件为三重判断：
+
+```typescript
+if (provider === "gmail" && userId && hasGmailConnection(userId))
+```
+
+三个条件必须同时为 true 才走 `GmailSendAdapter`：
+
+| 条件 | 说明 |
+|------|------|
+| `provider === "gmail"` | 对真实 Gmail 邮件恒为 true |
+| `userId` | 需要 Auth0 session 存在 |
+| `hasGmailConnection(userId)` | 需要内存 token store 中有该用户的 token |
+
+**核心问题**：`hasGmailConnection()` 检查的是 `token-store.ts` 中的 `Map`，这是一个模块级内存变量。在 **dev server 热更新 / HMR / 代码修改触发重新加载** 时，模块被重新执行，`const store = new Map()` 重新初始化，**所有已存储的 Gmail OAuth token 丢失**。
+
+实际发生链路：
+1. 用户连接 Gmail → token 存入内存 Map → inbox 成功拉取真实邮件
+2. 开发过程中代码修改 → dev server 热更新 → `token-store.ts` 模块重新执行 → Map 清空
+3. 前端 React state 中的邮件列表未丢失（仍是之前拉取的真实邮件，state 保留在浏览器内存中）
+4. 用户点 Send → 服务端检查 `hasGmailConnection(userId)` → **false**
+5. 条件不满足 → fall through 到 `MockSlackSendAdapter` → 返回 `externalMessageId: "mock-slack-sent-xxx"`
+6. 前端检测到以 `mock-` 开头 → 显示 `Sent (mock)`
+
+**附带发现的两个 bug**：
+
+| Bug | 说明 | 影响 |
+|-----|------|------|
+| `In-Reply-To` 头含 `gmail-` 前缀 | `buildRawEmail()` 收到的 messageId 为 `gmail-19abc123`（adapter 层加的前缀），不是合法的 RFC 2822 Message-ID | Gmail 无法识别，线程关联失败 |
+| 前端判定逻辑脆弱 | 通过 `externalMessageId.startsWith("mock-")` 猜测是否真实发送，依赖 mock 返回值的命名约定 | 判定不可靠，易误判 |
+
+#### 3.8.3 修复方案
+
+**1. send-service.ts 重构**
+
+新增 `SendChannel` 类型和 `SendReplyResult` 接口：
+
+```typescript
+export type SendChannel = "gmail_api" | "mock" | "gmail_api_error";
+
+export interface SendReplyResult extends SendResult {
+  provider: Provider;
+  sendChannel: SendChannel;
+}
+```
+
+- 返回值中明确包含 `sendChannel` 字段，标记实际使用的发送通道
+- 新增 `stripGmailPrefix()` 函数，在传入 `In-Reply-To` 前剥离 `gmail-` 前缀
+- 新增详细诊断日志，输出每个条件的实际值：
+  - 成功时：`[send-service] Gmail send SUCCESS: externalId=xxx`
+  - 条件不满足时：`[send-service] Gmail requested but falling back to mock. Reason: ...`
+
+**2. /api/send 响应结构优化**
+
+从返回完整 result 对象改为精确结构：
+
+```json
+{
+  "success": true,
+  "data": {
+    "provider": "gmail",
+    "sendChannel": "gmail_api",
+    "externalMessageId": "19abc456def"
+  }
+}
+```
+
+**3. 前端状态显示重写**
+
+基于 `sendChannel` 字段精确判断，不再依赖 externalMessageId 命名约定：
+
+| sendChannel | 前端显示 | 颜色 |
+|-------------|----------|------|
+| `gmail_api` | "Sent via Gmail" | 绿色 |
+| `mock` | "Sent (mock — not delivered). Gmail tokens may have expired; try reconnecting in Settings." | 黄色 |
+| `gmail_api_error` | "Gmail send failed: {具体错误}" | 红色 |
+| 网络异常 | "Network error — could not send" | 红色 |
+
+#### 3.8.4 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/services/send-service.ts` | 新增 `SendChannel` / `SendReplyResult` 类型；返回 `sendChannel` 字段；新增 `stripGmailPrefix()`；新增详细诊断日志 |
+| `src/app/api/send/route.ts` | 响应结构改为 `{ provider, sendChannel, externalMessageId }`；event log metadata 加入 `sendChannel` |
+| `src/components/inbox/message-detail.tsx` | 发送状态判定改为基于 `sendChannel`；三种明确状态 + 差异化颜色（绿/黄/红） |
+
+#### 3.8.5 已知限制
+
+- **根本限制未变**：Gmail token 仍为内存存储，dev server 重启后必须重新去 Settings 连接 Gmail
+- 这是 hackathon MVP 的 in-memory token store 架构决策的直接后果
+- 彻底解决需要将 token 持久化到数据库（`ConnectedAccount` 表），迁移点已在 `token-store.ts` 中标注
+
+#### 3.8.6 验收方法
+
+| 步骤 | 预期结果 |
+|------|----------|
+| dev server 启动后重新连接 Gmail | Settings 显示 Gmail "Live" |
+| 打开 Inbox → 选真实 Gmail 邮件 → Generate → Send | 前端显示绿色 "Sent via Gmail" |
+| 终端日志 | `[send-service] Gmail send SUCCESS: externalId=...`，无 `[MockSlackSend]` |
+| Gmail 已发送文件夹 | 可看到刚发出的回复 |
+| `/api/events?type=reply_sent` | `sendChannel: "gmail_api"` |
+| 不重连 Gmail 直接发送（token 丢失场景） | 前端显示黄色 mock 提示 + 终端 warn 日志 |
+
+### 3.9 Bugfix：token-store 改用 globalThis 防止 HMR 清空
+
+**状态：✅ 已修复**  
+**修复日期：2026-03-29**
+
+#### 3.9.1 问题定位过程
+
+在 3.8 的修复中加入了 `sendChannel` 和诊断日志后，终端日志确认：
+
+```
+[send-service] provider=gmail, userId="auth0|abc123", hasGmailConnection=false, storeSize=0, storeKeys=[]
+[send-service] Gmail requested but falling back to mock...
+[MockSlackSend] ...
+```
+
+关键信息：`storeSize=0, storeKeys=[]` — token store **为空**。
+
+排除了 key 不一致的可能性（全链路统一使用 `session.user.sub`），锁定根因为 **Next.js dev 模式 HMR 导致模块级 Map 被重新初始化**。
+
+| 排查项 | 结果 |
+|--------|------|
+| OAuth callback 存 token 用的 key | `session.user.sub` |
+| inbox-service 读 token 用的 key | `session.user.sub`（从 API route 传入） |
+| send-service 读 token 用的 key | `session.user.sub`（从 API route 传入） |
+| account-service 读 token 用的 key | `session.user.sub`（从 API route 传入） |
+| **key 一致性** | **全链路一致，无不一致** |
+| **store 内容** | **为空，token 被 HMR 清空** |
+
+#### 3.9.2 根因
+
+`token-store.ts` 原实现：
+
+```typescript
+const store = new Map<string, GmailTokens>(); // 模块级变量
+```
+
+Next.js dev 模式下，当任何依赖链上的文件修改时（开发过程中极其频繁），webpack/turbopack 会重新执行被影响的模块。`token-store.ts` 被多个模块 import（send-service、inbox-service、account-service、client.ts、callback route），任何相关文件的修改都会触发 `token-store.ts` 重新执行 → `const store = new Map()` 重新初始化 → **所有已存储的 token 丢失**。
+
+这是 Next.js 开发模式的已知行为，Prisma 官方文档对 PrismaClient 也推荐了相同的 globalThis 解决方案。
+
+#### 3.9.3 修复方案
+
+将 Map 实例挂载到 `globalThis`，使其在 HMR 周期中持久存在：
+
+```typescript
+const globalStore = globalThis as unknown as {
+  __polluxGmailTokenStore?: Map<string, GmailTokens>;
+};
+
+if (!globalStore.__polluxGmailTokenStore) {
+  globalStore.__polluxGmailTokenStore = new Map();
+}
+
+const store: Map<string, GmailTokens> = globalStore.__polluxGmailTokenStore;
+```
+
+`globalThis` 是 Node.js 进程级全局对象，不受模块重新加载影响。只有进程真正退出（`npm run dev` 被终止）时才会丢失。
+
+同时新增 `getStoreDebugInfo()` 函数暴露 store 的 size 和 keys，供诊断日志使用。
+
+在 OAuth callback 和 send-service 中加入完整诊断日志，输出：
+- 实际 userId 值
+- token store 当前 size 和 keys 列表
+- 每个条件的 true/false
+
+#### 3.9.4 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/gmail/token-store.ts` | Map 改用 `globalThis.__polluxGmailTokenStore` 持久化；新增 `getStoreDebugInfo()`；`setGmailTokens()` 加存储确认日志 |
+| `src/app/api/auth/gmail/callback/route.ts` | 新增 3 条诊断日志：token exchange 结果、存储后 verify、store 完整状态 |
+| `src/lib/services/send-service.ts` | 日志升级：输出实际 userId 值 + store size + store keys 列表 |
+
+#### 3.9.5 修复效果
+
+| 场景 | 修复前 | 修复后 |
+|------|--------|--------|
+| 修改代码文件后 HMR 触发 | token 丢失，发送走 mock | token 保留，发送走 Gmail API |
+| dev server 进程重启 | token 丢失 | token 仍然丢失（globalThis 随进程销毁） |
+| 生产部署多实例 | 不共享 | 不共享（需 DB） |
+
+#### 3.9.6 验收方法
+
+| 步骤 | 预期结果 |
+|------|----------|
+| 启动 dev server → 连接 Gmail | 终端打印 `[token-store] SET key="auth0|..."` 和 `[Gmail OAuth] Verify ... =true, storeSize=1` |
+| **随意修改一个 ts 文件并保存**（触发 HMR） | 终端显示 HMR 更新，但不应出现 `new Map()` 重新初始化 |
+| HMR 后立即去 Inbox 发送回复 | 终端打印 `storeSize=1, hasGmailConnection=true` + `Gmail send SUCCESS` |
+| 前端显示 | 绿色 "Sent via Gmail" |
+
+### 3.10 后续必做：Gmail Token 持久化迁移
+
+> **优先级：HIGH — 如果 Pollux 继续发展，这是最先需要解决的基础设施问题。**
+
+当前 Gmail OAuth token 使用 `globalThis` + 内存 Map 存储。虽然 3.9 的修复解决了 HMR 清空问题，但内存存储方案仍然存在以下 **不可接受的生产限制**：
+
+| 问题 | 说明 | 影响 |
+|------|------|------|
+| **服务重启即掉线** | `npm run dev` 或生产进程重启后 token 丢失，用户必须重新 OAuth 连接 | 每次部署都断开所有用户的 Gmail 连接 |
+| **多实例部署不共享** | 内存 Map 只存在于单个 Node.js 进程，负载均衡下不同实例无法共享 token | 用户请求被路由到不同实例时连接状态不一致 |
+| **无法长期维持连接** | access_token 过期后 refresh 成功写回内存，但进程重启丢失 refresh_token | 用户需频繁重新授权，体验差 |
+| **不适合真正用户使用** | 仅适合单人本地 demo，不具备任何生产可用性 | 无法向真实用户开放 |
+
+#### 建议迁移方案
+
+**目标**：将 token 存入持久化存储，保持现有 `token-store.ts` 的接口不变（`set/get/has/remove`），只替换底层实现。
+
+**方案 A：Prisma + 数据库（推荐）**
+
+复用已有 `prisma/schema.prisma` 中的 `ConnectedAccount` 模型：
+
+```prisma
+model ConnectedAccount {
+  id            String   @id @default(cuid())
+  userId        String
+  provider      String   // "gmail"
+  accessToken   String
+  refreshToken  String
+  scope         String
+  expiresAt     DateTime
+  email         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, provider])
+}
+```
+
+改造 `token-store.ts`：`setGmailTokens()` → `prisma.connectedAccount.upsert()`，`getGmailTokens()` → `prisma.connectedAccount.findUnique()`。
+
+**方案 B：Auth0 Token Vault**
+
+如果不想自管 token，可使用 Auth0 的 Token Vault 功能存储第三方 OAuth token，但需要 Auth0 付费计划。
+
+**方案 C：加密文件存储（过渡方案）**
+
+将 token 加密后写入本地 JSON 文件（如 `.data/tokens.json`），适合单机部署过渡，但不适合多实例。
+
+#### 迁移影响范围
+
+只需修改 **1 个文件**：`src/lib/gmail/token-store.ts`。所有消费方（inbox-service、send-service、account-service、client.ts、callback route）通过已有接口调用，无需任何修改。这是当初将 token 操作封装为独立模块的设计收益。
+
+---
+
 ## 文件索引
 
 ```
@@ -587,14 +1150,19 @@ pollux/
 │   │   ├── layout.tsx                         ← 02-A 修改
 │   │   ├── page.tsx                           ← 02-A 修改
 │   │   ├── globals.css
-│   │   ├── dashboard/page.tsx                 ← 02-A 修改
-│   │   ├── inbox/page.tsx
+│   │   ├── dashboard/page.tsx                 ← 03 修改
+│   │   ├── inbox/page.tsx                     ← 03 修改（filter toggle + 指标栏）
 │   │   ├── settings/page.tsx                  ← 02-A 修改
 │   │   └── api/
-│   │       ├── inbox/route.ts
+│   │       ├── inbox/route.ts                 ← 03 修改（查询参数 + meta）
 │   │       ├── accounts/route.ts              ← 02-A 修改
-│   │       ├── reply/generate/route.ts
-│   │       ├── send/route.ts
+│   │       ├── reply/generate/route.ts        ← 03 修改（event log）
+│   │       ├── send/route.ts                  ← 03 修改（event log）
+│   │       ├── events/route.ts                ← 03 新增（Event Log REST API）
+│   │       ├── attachments/
+│   │       │   └── [messageId]/
+│   │       │       └── [attachmentId]/
+│   │       │           └── route.ts           ← 03 新增（下载骨架 501）
 │   │       └── auth/gmail/                    ← 02-A 新增
 │   │           ├── connect/route.ts
 │   │           └── callback/route.ts
@@ -602,7 +1170,10 @@ pollux/
 │   │   ├── layout/
 │   │   │   ├── app-shell.tsx                  ← 02-A 修改
 │   │   │   └── sidebar.tsx                    ← 02-A 修改
-│   │   ├── inbox/         (MessageList, MessageListItem, MessageDetail)
+│   │   ├── inbox/
+│   │   │   ├── message-list.tsx
+│   │   │   ├── message-list-item.tsx
+│   │   │   └── message-detail.tsx             ← 03 修改（HTML渲染 + 附件）
 │   │   ├── reply/         (ReplyCandidateCard)
 │   │   ├── settings/
 │   │   │   ├── account-status-card.tsx        ← 02-A 修改
@@ -610,34 +1181,37 @@ pollux/
 │   │   └── shared/        (StatusBadge, ProviderIcon)
 │   └── lib/
 │       ├── auth0.ts                           ← 02-A 新增
-│       ├── types/index.ts                     ← 02-A 修改
+│       ├── config.ts                          ← 03 新增（INBOX_MAX_RESULTS）
+│       ├── types/index.ts                     ← 03 修改（Attachment + InboxFetchOptions）
 │       ├── gmail/                             ← 02-A 新增
 │       │   ├── oauth.ts
 │       │   ├── token-store.ts
 │       │   ├── client.ts                      ← 02-B 新增
-│       │   └── parse.ts                       ← 02-B 新增
+│       │   └── parse.ts                       ← 03 修改（extractHtmlBody + extractAttachments）
 │       ├── openai/
 │       │   └── generate.ts                    ← 02-C 新增
 │       ├── mocks/         (accounts, messages, replies, style, user)
 │       ├── adapters/
-│       │   ├── inbox.ts          (接口 + MockSlackInboxAdapter)
-│       │   ├── gmail-inbox.ts                 ← 02-B 新增
+│       │   ├── inbox.ts                       ← 03 修改（InboxFetchOptions 参数）
+│       │   ├── gmail-inbox.ts                 ← 03 修改（config + filter + risk + html + attachments）
 │       │   ├── gmail-send.ts                  ← 02-D 新增
 │       │   ├── send.ts                        ← 02-D 修改
 │       │   └── style-source.ts
 │       └── services/
-│           ├── inbox-service.ts               ← 02-B 修改
+│           ├── inbox-service.ts               ← 03 修改（options + limit + event log）
 │           ├── reply-service.ts               ← 02-C 修改
 │           ├── account-service.ts             ← 02-A 修改
-│           └── send-service.ts                ← 02-D 修改
+│           ├── send-service.ts                ← 02-D 修改
+│           ├── risk-service.ts                ← 03 新增（classifyRisk）
+│           └── event-log.ts                   ← 03 新增（内存事件日志）
 ├── docs/
 │   ├── prompts/
 │   │   ├── 01-cursor-min-scaffold.md
 │   │   └── 02-cursor-auth0-gmail-openai.md
 │   └── history.md                             ← 本文件
-├── .env.example                               ← 02-A 新增
+├── .env.example                               ← 03 修改（新增 INBOX_MAX_RESULTS）
 ├── .gitignore
-├── package.json                               ← 02-A 修改（新增依赖）
+├── package.json                               ← 03 修改（新增 dompurify）
 ├── tsconfig.json
 ├── next.config.ts
 ├── postcss.config.mjs
@@ -660,6 +1234,7 @@ pollux/
 | google-auth-library | latest | Gmail OAuth（02-A 新增） |
 | googleapis | latest | Gmail API v1（02-B 新增） |
 | openai | latest | Chat Completions API（02-C 新增） |
+| dompurify | latest | HTML sanitize，XSS 防御（03 新增） |
 
 ## 本地运行
 
