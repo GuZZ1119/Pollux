@@ -1139,6 +1139,319 @@ model ConnectedAccount {
 
 ---
 
+## 阶段 4：竞赛版前端 Polish
+
+**状态：✅ 已完成**  
+**完成日期：2026-03-30**
+
+目标：打磨主链路（登录 → 连接 Gmail → 查看邮件 → AI 生成回复 → 发送）的视觉和交互，使其在 60-90 秒演示内达到成品级 demo 观感。不扩展新平台，不做重型后端重构，不动核心业务逻辑。
+
+### 4.1 Inbox 页面比赛版优化
+
+**状态：✅ 已完成**
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| 页面标题 | "Inbox" 无副标题 | "Inbox" + 副标题 "AI-prioritized communication feed" |
+| Metrics 区 | 横排文字标签 `N Messages · M Unread` | 3 列 grid 卡片，数字大字号 + 标签小字号 |
+| Filter 区 | "Primary Only" / "All Inbox" | "Important" / "Everything"（产品化文案） |
+| Refresh 按钮 | 文字链接 "Refresh" | 图标按钮（循环箭头） |
+| Source 指示 | 文字描述 | 绿色/灰色圆点 + 数量 |
+| Loading 状态 | 居中 spinner + "Loading messages..." | 左栏骨架屏（6 行 skeleton）+ 右栏 spinner |
+| Error 状态 | 红色文字 + 小按钮 | 大图标 + 标题 + 详情 + "Try Again" 按钮 |
+| Empty 状态（邮件列表） | "No messages" 纯文字 | 邮件图标 + "No messages yet" + Settings 引导链接 |
+| Empty 状态（详情面板） | "Select a message to view details" | 大图标 + "Select a conversation" + 引导文案 |
+| 左栏宽度 | `w-96`（384px） | `w-[400px]`（400px）|
+
+### 4.2 邮件列表项优化
+
+**状态：✅ 已完成**
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| 未读指示 | 整行 `font-medium` | 蓝色实心圆点 + 发件人/subject 加粗 |
+| 选中高亮 | `bg-blue-50 border-l-2` | `bg-blue-50/80 border-l-[3px] border-l-blue-600` |
+| 发件人名字 | 完整 "Alice &lt;alice@example.com&gt;" | 提取名字 "Alice"（`extractName()` 函数） |
+| 时间显示 | "10:30 AM" 绝对时间 | "2h" / "1d" / "Mar 25" 相对时间（`relativeTime()` 函数） |
+| Risk 徽标 | 彩色文字方块 "HIGH" / "MEDIUM" | 紧凑彩色圆点（红/黄） |
+| Provider 标签 | emoji ProviderIcon 组件 | `Gmail` / `Slack` 文字标签（红/紫背景） |
+| Snippet 样式 | 灰色 `text-xs` | 根据 viewed 状态区分灰度 |
+
+### 4.3 邮件详情面板优化
+
+**状态：✅ 已完成**
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| Header 布局 | Provider图标 + 发件人 + Risk + Subject + Time 一列 | Subject 最大字号在上 → sender/time/provider/risk 水平排列 |
+| 邮件正文容器 | `bg-gray-50 rounded-lg p-4` | `border border-gray-100 rounded-xl bg-gray-50/60 p-5`，更自然 |
+| HTML 渲染 | 基础 prose 样式 | 增强 blockquote/link/img 样式 |
+| 附件卡片 | 文字堆叠 + 回形针图标 | 独立圆角卡片（文件图标 + 文件名 + 大小 + 类型标签） |
+| 背景色 | 白色 | `bg-white` 主体 + `bg-gray-50/50` 右侧底色 |
+
+### 4.4 AI Reply 区域优化
+
+**状态：✅ 已完成**
+
+这是比赛演示中最重要的视觉焦点区域，做了全面提升：
+
+#### Generate 按钮
+
+| 状态 | 表现 |
+|------|------|
+| 默认 | 蓝色圆角按钮 + sparkle 图标 + "Generate AI Reply" |
+| Loading | spinner 动画 + "Generating..." |
+| 已有候选后 | 按钮隐藏，展示候选卡片 |
+
+#### Reply Candidate 卡片
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| 整体样式 | 普通 border card | `border-2 rounded-xl`，选中态 `border-blue-500 bg-blue-50/50 shadow-sm` |
+| 编号 | 无 | 蓝色数字圆球（1/2/3），选中时白底蓝字 |
+| 信心值 | 文字百分比 "85%" | 进度条 + 百分比（绿/黄/灰三色） |
+| Source 标签 | 小文字 "AI generated" / "mock fallback" | pill 式 badge + sparkle 图标 |
+| 正文 | 无缩进 | `pl-8` 缩进与编号对齐 |
+
+#### Composer
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| 区域分割 | `border-t` 分隔线 | "AI Reply" 居中 label 分割线 + "COMPOSE" 标签 |
+| 收件人提示 | 无 | 右上角 "To: {senderName}" |
+| 文本框 | `rounded-lg p-3` | `rounded-xl p-4`，更大行距 |
+| Send 按钮 | 绿色小按钮 | 圆角大按钮 + 发送图标 + Loading spinner |
+
+#### 发送结果
+
+| 之前 | 之后 |
+|------|------|
+| 行内彩色文字 "Sent via Gmail" / "Sent (mock)" | 全宽圆角卡片，三种状态明确区分 |
+
+| sendChannel | 卡片样式 | 内容 |
+|-------------|---------|------|
+| `gmail_api` | 绿色边框 + 绿色背景 + ✓ 图标 | "Reply sent via Gmail" + "Delivered to {sender}'s inbox" |
+| `mock` | 黄色边框 + 黄色背景 + ⚠ 图标 | "Sent via mock (not delivered)" + Settings 链接 |
+| `error` | 红色边框 + 红色背景 | "Send failed" + 错误详情 + Retry 链接 |
+
+### 4.5 Settings 页面优化
+
+**状态：✅ 已完成**
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| Account 卡片 | `rounded-lg p-4` | `rounded-xl p-5`，头像有 ring |
+| Gmail 连接卡片 | 基础 flex 布局 | 连接态绿色边框+背景；未连接态灰色；显示 scopes 标签 |
+| Automation 选项 | `border rounded-lg` | `border-2 rounded-xl`，选中态蓝色边框 |
+| Style Card | 列表式 toneRules/bannedPhrases | 可视化预览卡片 + Tone/Avoid/Sign-offs 标签 + "Preview" badge + "editor coming soon" 提示 |
+| Integration Status | ✅/☐ 文字清单 | **移除**（过时内容，与当前进度不符） |
+| 未登录页面 | 简单文字 + Sign in 按钮 | 大头像图标 + 标题 + 描述 + 圆角按钮 |
+| 页面宽度 | `max-w-3xl p-6` | `max-w-2xl mx-auto p-8` |
+
+### 4.6 共享组件优化
+
+**状态：✅ 已完成**
+
+#### RiskBadge
+
+| 之前 | 之后 |
+|------|------|
+| 方形背景 + 全大写 "HIGH" / "MEDIUM" / "LOW" | pill 式 `rounded-full` + 首字母大写 "High" / "Medium" / "Low" |
+| HIGH 无特殊标识 | HIGH 带 ⚠ 警告图标 |
+
+#### AccountStatusBadge
+
+| 之前 | 之后 |
+|------|------|
+| 方形标签 "CONNECTED" / "DISCONNECTED" | pill 式 + 颜色圆点 + 人性化文案 "Connected" / "Disconnected" / "Pending" |
+
+#### Sidebar
+
+| 改动项 | 之前 | 之后 |
+|--------|------|------|
+| Tagline | "AI Communication Layer" | "AI Communication Copilot" |
+
+### 4.7 用户头像 Broken Image 修复
+
+**状态：✅ 已完成**  
+**修复日期：2026-03-30**
+
+#### 问题
+
+Sidebar 左下角和 Settings 页面的用户头像偶尔显示浏览器原生 broken image 图标，原因包括：
+- Auth0/Google 头像 URL 过期或不可用
+- 跨域 referrer 策略导致 Google CDN 返回 403
+- 网络问题导致头像加载失败
+
+之前的实现是条件渲染：`user.picture ? <img> : <div>{initials}</div>`。问题在于 `user.picture` 存在（非空字符串）但 URL 实际不可访问时，`<img>` 会显示 broken image。
+
+#### 修复方案
+
+新建统一头像组件 `src/components/shared/user-avatar.tsx`：
+
+```tsx
+// 核心逻辑
+const [failed, setFailed] = useState(false);
+useEffect(() => { setFailed(false); }, [src]); // src 变化时重置
+
+// src 存在且未失败 → 渲染 <img onError={() => setFailed(true)}>
+// 否则 → 渲染首字母 fallback
+```
+
+关键设计：
+- `onError` 自动捕获图片加载失败，切换到首字母 fallback
+- `referrerPolicy="no-referrer"` 避免 Google CDN 的 403
+- `useEffect` 监听 `src` 变化，重新登录后自动尝试新 URL
+- 支持 `sm`（32px）/ `md`（40px）/ `lg`（44px）三种尺寸
+- 全项目统一：Sidebar 和 Settings 均使用 `UserAvatar`
+
+#### 影响文件
+
+| 文件 | 变更 |
+|------|------|
+| `src/components/shared/user-avatar.tsx` | **新建** — 统一头像组件 |
+| `src/components/layout/sidebar.tsx` | 替换手写 `<img>` + fallback `<div>` 为 `<UserAvatar>` |
+| `src/components/settings/settings-panel.tsx` | 替换手写 `<img>` + fallback `<div>` 为 `<UserAvatar>` |
+
+### 4.8 Pollux 本地 Viewed/Opened 状态
+
+**状态：✅ 已完成**  
+**完成日期：2026-03-30**
+
+#### 问题背景
+
+当前 "Unread" 完全基于 Gmail 的 `UNREAD` label。用户在 Pollux 中打开邮件详情后，Gmail 侧仍然是未读状态，导致：
+- Unread 计数不会因打开邮件而减少
+- 用户反复看到相同的"未读"邮件
+- 无法区分"全新邮件"和"已在 Pollux 看过但 Gmail 未标记已读"
+
+#### 实现方案
+
+**存储层**：`src/lib/viewed-store.ts`
+
+```typescript
+const STORAGE_KEY = "pollux_viewed_messages";
+const MAX_ENTRIES = 500;
+
+// getViewedIds() → Set<string>  — 从 localStorage 读取
+// markViewed(id) → Set<string>  — 标记已查看，返回更新后的 Set
+// isViewed(id) → boolean        — 查询单条
+```
+
+- 使用 `localStorage`，刷新/关标签页后状态保留
+- 滚动淘汰：最多保留 500 条（超出时移除最早记录）
+- 写入失败（localStorage 满或不可用）静默降级
+- Key 设计：`pollux_viewed_messages` → JSON 数组
+
+**Inbox 页面集成**：
+
+1. `useEffect` 初始化时从 `localStorage` 读取 `viewedIds` 到 React state
+2. `handleSelectMessage` 中调用 `markViewed(id)` → 同步更新 state
+3. `viewedIds` 通过 props 传递：`InboxPage` → `MessageList` → `MessageListItem`
+
+**邮件列表三态视觉**：
+
+| 状态 | 条件 | 左侧指示点 | 文字样式 |
+|------|------|-----------|---------|
+| **New** | Gmail UNREAD + Pollux 未打开 | 实心蓝色圆点 | 发件人 `font-semibold text-gray-900`、subject `font-medium text-gray-800` |
+| **Seen** | Gmail UNREAD + Pollux 已打开 | 空心蓝色圆圈（`border border-blue-300`） | 发件人 `text-gray-500`、subject `text-gray-500` |
+| **已读** | Gmail 非 UNREAD | 无圆点 | 发件人 `text-gray-700`、subject `text-gray-600` |
+
+Snippet 文字灰度也跟随 viewed 状态：未看过 `text-gray-400`，看过 `text-gray-300`。
+
+### 4.9 Unread 文案与 Metrics 逻辑优化
+
+**状态：✅ 已完成**  
+**修复日期：2026-03-30**
+
+#### 问题
+
+顶部 Metrics 显示 "Unread"，用户可能误以为在 Pollux 打开邮件后 Gmail 侧也会标记已读。实际上 Pollux 当前不修改 Gmail 已读状态。
+
+#### 修改
+
+**Metrics 卡片**：
+
+| 之前 | 之后 |
+|------|------|
+| **Unread** — `messages.filter(m => m.status === "unread").length` | **New** — `messages.filter(m => m.status === "unread" && !viewedIds.has(m.id)).length` |
+
+"New" 的含义：Gmail 未读 **且** 用户尚未在 Pollux 中打开过。这是最有行动价值的指标。
+
+**Tooltip（hover）**：
+
+鼠标悬停 "New" 卡片时，显示 tooltip：
+- 主文案："Unread in Gmail & not yet opened in Pollux"
+- 次文案："{N} total unread in Gmail"
+
+清晰传达 "New" 是 Pollux 的概念，Gmail 未读数另行展示。
+
+**Source 行**：
+
+在底部来源行新增 Gmail 未读总数：
+
+```
+🟢 12 Gmail · ⚪ 3 Slack · 5 unread in Gmail
+```
+
+用户可以对比 "New" 和 "unread in Gmail" 来理解两者差异。
+
+#### 设计决策
+
+| 决策 | 理由 |
+|------|------|
+| 不自动调用 Gmail API mark as read | 避免引入 side effect，保持 Pollux 为只读消费者 |
+| 不持久化到数据库 | Hackathon MVP，localStorage 足够，后续迁移点清晰 |
+| "New" 而非 "Unread in Gmail" 作为主指标 | 更贴近用户关心的"还没处理的邮件"，而非邮件系统的技术状态 |
+| Tooltip 补充说明而非主界面展示 | 信息层级：主指标简洁，hover 获取详情 |
+
+### 4.10 影响文件总览
+
+| 文件 | 阶段 | 变更类型 |
+|------|------|---------|
+| `src/app/inbox/page.tsx` | 4.1, 4.8, 4.9 | 重写 — Metrics grid、skeleton loading、error/empty states、viewedIds 集成、"New" 指标 |
+| `src/components/inbox/message-list.tsx` | 4.2, 4.8 | 重写 — 新增 `viewedIds` prop 透传 |
+| `src/components/inbox/message-list-item.tsx` | 4.2, 4.8 | 重写 — 三态视觉、相对时间、名字提取、viewed 样式 |
+| `src/components/inbox/message-detail.tsx` | 4.3, 4.4 | 重写 — Header 布局、AI Reply 分割线、候选卡片编号、Composer 区、发送结果卡片 |
+| `src/components/reply/reply-candidate-card.tsx` | 4.4 | 重写 — 编号圆球、进度条 confidence、增大内边距 |
+| `src/components/shared/status-badge.tsx` | 4.6 | 重写 — pill 式 badge、HIGH 警告图标、AccountStatusBadge 带圆点 |
+| `src/components/shared/user-avatar.tsx` | 4.7 | **新建** — 统一头像组件（onError fallback） |
+| `src/components/shared/provider-icon.tsx` | — | 未改（emoji 保留） |
+| `src/app/settings/page.tsx` | 4.5 | 重写 — 居中布局、未登录 empty state |
+| `src/components/settings/settings-panel.tsx` | 4.5, 4.7 | 重写 — UserAvatar、Style Card 可视化预览、移除过时 checklist |
+| `src/components/settings/account-status-card.tsx` | 4.5 | 重写 — 连接态绿色、scopes 标签、Reconnect 链接 |
+| `src/components/layout/sidebar.tsx` | 4.6, 4.7 | 修改 — UserAvatar 替换、tagline 更新 |
+| `src/lib/viewed-store.ts` | 4.8 | **新建** — localStorage viewed 消息管理 |
+
+### 4.11 验收结果
+
+| 验收项 | 结果 |
+|--------|------|
+| `next build` 编译通过 | ✅ 零新增 lint 错误 |
+| Inbox 骨架屏 loading 正确显示 | ✅ 左栏 6 行 skeleton + 右栏 spinner |
+| Inbox error 状态有 Retry | ✅ 大图标 + Try Again 按钮 |
+| 邮件列表空态有引导 | ✅ 邮件图标 + Settings 链接 |
+| 详情面板空态有引导 | ✅ "Select a conversation" + 说明文案 |
+| Reply candidates 编号 + 进度条 | ✅ 1/2/3 圆球 + 彩色进度条 |
+| 发送结果全宽卡片 | ✅ 绿/黄/红三态 |
+| Settings Style Card 可视化预览 | ✅ Tone/Avoid/Sign-offs 标签 |
+| 用户头像 broken image 修复 | ✅ onError 自动 fallback 到首字母 |
+| Pollux viewed 状态持久化 | ✅ localStorage，刷新后保留 |
+| 邮件列表三态指示（实心/空心/无） | ✅ |
+| Metrics "New" 指标正确计算 | ✅ Gmail UNREAD ∩ !Pollux viewed |
+| "New" 卡片 hover tooltip | ✅ 解释含义 + Gmail 未读总数 |
+| Source 行展示 Gmail unread 数 | ✅ |
+
+### 4.12 当前明确不包含的内容
+
+- ❌ 打开邮件时自动调用 Gmail API mark as read（需后端新 API）
+- ❌ Viewed 状态数据库持久化（当前 localStorage，后续迁移）
+- ❌ Dashboard 页面产品化改造（仍为 milestone 风格）
+- ❌ 发送后 thread 回复预览
+- ❌ 多平台（Outlook / Slack）真实接入
+
+---
+
 ## 文件索引
 
 ```
@@ -1151,8 +1464,8 @@ pollux/
 │   │   ├── page.tsx                           ← 02-A 修改
 │   │   ├── globals.css
 │   │   ├── dashboard/page.tsx                 ← 03 修改
-│   │   ├── inbox/page.tsx                     ← 03 修改（filter toggle + 指标栏）
-│   │   ├── settings/page.tsx                  ← 02-A 修改
+│   │   ├── inbox/page.tsx                     ← 04 重写（Metrics + viewedIds + skeleton）
+│   │   ├── settings/page.tsx                  ← 04 重写（居中布局 + empty state）
 │   │   └── api/
 │   │       ├── inbox/route.ts                 ← 03 修改（查询参数 + meta）
 │   │       ├── accounts/route.ts              ← 02-A 修改
@@ -1169,19 +1482,24 @@ pollux/
 │   ├── components/
 │   │   ├── layout/
 │   │   │   ├── app-shell.tsx                  ← 02-A 修改
-│   │   │   └── sidebar.tsx                    ← 02-A 修改
+│   │   │   └── sidebar.tsx                    ← 04 修改（UserAvatar + tagline）
 │   │   ├── inbox/
-│   │   │   ├── message-list.tsx
-│   │   │   ├── message-list-item.tsx
-│   │   │   └── message-detail.tsx             ← 03 修改（HTML渲染 + 附件）
-│   │   ├── reply/         (ReplyCandidateCard)
+│   │   │   ├── message-list.tsx                ← 04 重写（viewedIds prop）
+│   │   │   ├── message-list-item.tsx          ← 04 重写（三态视觉 + 相对时间）
+│   │   │   └── message-detail.tsx             ← 04 重写（AI Reply 区优化）
+│   │   ├── reply/
+│   │   │   └── reply-candidate-card.tsx       ← 04 重写（编号 + 进度条）
 │   │   ├── settings/
-│   │   │   ├── account-status-card.tsx        ← 02-A 修改
-│   │   │   └── settings-panel.tsx             ← 02-A 修改
-│   │   └── shared/        (StatusBadge, ProviderIcon)
+│   │   │   ├── account-status-card.tsx        ← 04 重写（连接态绿色 + scopes）
+│   │   │   └── settings-panel.tsx             ← 04 重写（UserAvatar + Style预览）
+│   │   └── shared/
+│   │       ├── status-badge.tsx               ← 04 重写（pill式 + 图标）
+│   │       ├── provider-icon.tsx
+│   │       └── user-avatar.tsx                ← 04 新建（头像 onError fallback）
 │   └── lib/
 │       ├── auth0.ts                           ← 02-A 新增
 │       ├── config.ts                          ← 03 新增（INBOX_MAX_RESULTS）
+│       ├── viewed-store.ts                    ← 04 新建（localStorage viewed 管理）
 │       ├── types/index.ts                     ← 03 修改（Attachment + InboxFetchOptions）
 │       ├── gmail/                             ← 02-A 新增
 │       │   ├── oauth.ts
