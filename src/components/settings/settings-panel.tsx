@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ConnectedAccount, AutomationLevel, SessionUser } from "@/lib/types";
 import { AccountStatusCard } from "./account-status-card";
 import { mockStyleCard } from "@/lib/mocks/style";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface Props {
   accounts: ConnectedAccount[];
@@ -24,19 +25,13 @@ export function SettingsPanel({ accounts, user }: Props) {
 
   return (
     <div className="space-y-8">
-      {/* Auth Status */}
-      <section className="border border-gray-200 rounded-lg p-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Account</h2>
+      {/* Account */}
+      <section className="border border-gray-200 rounded-xl p-5">
+        <h2 className="text-base font-semibold text-gray-900 mb-4">Account</h2>
         {user ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {user.picture ? (
-                <img src={user.picture} alt="" className="w-10 h-10 rounded-full" />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold">
-                  {user.name?.[0]?.toUpperCase() ?? "?"}
-                </div>
-              )}
+              <UserAvatar src={user.picture} name={user.name} size="lg" className="ring-2 ring-gray-100" />
               <div>
                 <p className="text-sm font-medium text-gray-900">{user.name ?? "User"}</p>
                 <p className="text-xs text-gray-500">{user.email}</p>
@@ -44,7 +39,7 @@ export function SettingsPanel({ accounts, user }: Props) {
             </div>
             <a
               href="/auth/logout"
-              className="text-xs text-gray-500 hover:text-red-600 hover:underline transition-colors"
+              className="text-xs text-gray-400 hover:text-red-600 transition-colors"
             >
               Sign out
             </a>
@@ -54,7 +49,7 @@ export function SettingsPanel({ accounts, user }: Props) {
             <p className="text-sm text-gray-500">Not signed in</p>
             <a
               href="/auth/login"
-              className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700"
             >
               Sign in
             </a>
@@ -62,13 +57,13 @@ export function SettingsPanel({ accounts, user }: Props) {
         )}
       </section>
 
-      {/* Connected Accounts */}
+      {/* Integrations */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Connected Accounts</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Integrations</h2>
         <p className="text-sm text-gray-500 mb-4">
           {gmailConnected
-            ? "Gmail is connected via Google OAuth. Slack integration coming soon."
-            : "Connect your Gmail account to start using Pollux with real emails."}
+            ? "Gmail is connected and syncing your inbox."
+            : "Connect Gmail to use Pollux with your real emails."}
         </p>
         <div className="space-y-3">
           {accounts.map((acc) => (
@@ -77,15 +72,20 @@ export function SettingsPanel({ accounts, user }: Props) {
         </div>
       </section>
 
-      {/* Automation Level */}
+      {/* Automation */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Automation Level</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Automation Level</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Control how Pollux handles reply generation and sending.
+        </p>
         <div className="space-y-2">
           {automationOptions.map((opt) => (
             <label
               key={opt.value}
-              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                level === opt.value ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                level === opt.value
+                  ? "border-blue-500 bg-blue-50/50"
+                  : "border-gray-200 hover:border-gray-300"
               }`}
             >
               <input
@@ -94,66 +94,66 @@ export function SettingsPanel({ accounts, user }: Props) {
                 value={opt.value}
                 checked={level === opt.value}
                 onChange={() => setLevel(opt.value)}
-                className="mt-0.5"
+                className="mt-0.5 accent-blue-600"
               />
               <div>
                 <p className="text-sm font-medium text-gray-900">{opt.label}</p>
-                <p className="text-xs text-gray-500">{opt.desc}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
               </div>
             </label>
           ))}
         </div>
       </section>
 
-      {/* Style / Persona */}
+      {/* Style Card Preview */}
       <section>
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Communication Style</h2>
-        <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm font-medium text-gray-700">Persona</p>
-            <p className="text-sm text-gray-900 capitalize">{mockStyleCard.persona}</p>
+            <h2 className="text-base font-semibold text-gray-900">Communication Style</h2>
+            <p className="text-sm text-gray-500 mt-0.5">Your AI replies follow these rules.</p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-gray-700">Tone Rules</p>
-            <ul className="list-disc list-inside text-sm text-gray-600">
-              {mockStyleCard.toneRules.map((r, i) => (
-                <li key={i}>{r}</li>
-              ))}
-            </ul>
+          <span className="text-[10px] uppercase tracking-wider font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
+            Preview
+          </span>
+        </div>
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-gray-50 px-5 py-3 border-b border-gray-200">
+            <p className="text-sm font-medium text-gray-700 capitalize">
+              Persona: {mockStyleCard.persona}
+            </p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-gray-700">Banned Phrases</p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {mockStyleCard.bannedPhrases.map((p, i) => (
-                <span key={i} className="bg-red-50 text-red-700 text-xs px-2 py-0.5 rounded">
-                  {p}
-                </span>
-              ))}
+          <div className="p-5 space-y-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Tone</p>
+              <div className="flex flex-wrap gap-1.5">
+                {mockStyleCard.toneRules.map((r, i) => (
+                  <span key={i} className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg">{r}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Avoid</p>
+              <div className="flex flex-wrap gap-1.5">
+                {mockStyleCard.bannedPhrases.map((p, i) => (
+                  <span key={i} className="text-xs bg-red-50 text-red-600 px-2.5 py-1 rounded-lg line-through decoration-red-300">{p}</span>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Sign-offs</p>
+              <div className="flex flex-wrap gap-1.5">
+                {mockStyleCard.signoffPatterns.map((s, i) => (
+                  <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg">{s}</span>
+                ))}
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-gray-700">Sign-off Patterns</p>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {mockStyleCard.signoffPatterns.map((s, i) => (
-                <span key={i} className="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded">
-                  {s}
-                </span>
-              ))}
-            </div>
+          <div className="bg-gray-50 px-5 py-3 border-t border-gray-200">
+            <p className="text-xs text-gray-400">
+              Full Style Card editor coming soon — customize tone, vocabulary, and sign-offs per persona.
+            </p>
           </div>
         </div>
-      </section>
-
-      {/* Integration status */}
-      <section className="border border-dashed border-gray-300 rounded-lg p-4 bg-gray-50">
-        <h3 className="text-sm font-semibold text-gray-600 mb-1">Integration Status</h3>
-        <ul className="text-xs text-gray-500 space-y-1">
-          <li>✅ Auth0 Universal Login — active</li>
-          <li>{gmailConnected ? "✅" : "☐"} Gmail OAuth — {gmailConnected ? "connected" : "not connected"}</li>
-          <li>☐ Slack — mock only (coming soon)</li>
-          <li>☐ OpenAI reply generation — next milestone</li>
-          <li>☐ Token Vault / DB persistence — planned</li>
-        </ul>
       </section>
     </div>
   );

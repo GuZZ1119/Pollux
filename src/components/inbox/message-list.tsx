@@ -4,25 +4,19 @@ import { MessageListItem } from "./message-list-item";
 interface Props {
   messages: MessageItem[];
   selectedId: string | null;
+  viewedIds: Set<string>;
   onSelect: (id: string) => void;
 }
 
-export function MessageList({ messages, selectedId, onSelect }: Props) {
-  if (messages.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-        No messages
-      </div>
-    );
-  }
-
+export function MessageList({ messages, selectedId, viewedIds, onSelect }: Props) {
   return (
-    <div className="overflow-y-auto">
+    <div className="divide-y divide-gray-100">
       {messages.map((msg) => (
         <MessageListItem
           key={msg.id}
           message={msg}
           isSelected={selectedId === msg.id}
+          isViewed={viewedIds.has(msg.id)}
           onClick={() => onSelect(msg.id)}
         />
       ))}

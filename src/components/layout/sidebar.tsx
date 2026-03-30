@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { SessionUser } from "@/lib/types";
+import { UserAvatar } from "@/components/shared/user-avatar";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
@@ -17,22 +18,13 @@ interface Props {
 export function Sidebar({ user }: Props) {
   const pathname = usePathname();
 
-  const initials = user?.name
-    ? user.name
-        .split(" ")
-        .map((w) => w[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
-    : null;
-
   return (
     <aside className="w-56 shrink-0 border-r border-gray-200 bg-gray-50 flex flex-col h-screen sticky top-0">
       <div className="p-5 border-b border-gray-200">
         <Link href="/" className="text-xl font-bold tracking-tight text-gray-900">
           Pollux
         </Link>
-        <p className="text-xs text-gray-500 mt-0.5">AI Communication Layer</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">AI Communication Copilot</p>
       </div>
 
       <nav className="flex-1 p-3 space-y-1">
@@ -59,13 +51,7 @@ export function Sidebar({ user }: Props) {
         {user ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              {user.picture ? (
-                <img src={user.picture} alt="" className="w-8 h-8 rounded-full" />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                  {initials}
-                </div>
-              )}
+              <UserAvatar src={user.picture} name={user.name} size="sm" />
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{user.name ?? "User"}</p>
                 <p className="text-xs text-gray-500 truncate">{user.email}</p>

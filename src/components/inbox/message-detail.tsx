@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import type { MessageItem, ReplyCandidate } from "@/lib/types";
 import { RiskBadge } from "@/components/shared/status-badge";
-import { ProviderIcon } from "@/components/shared/provider-icon";
 import { ReplyCandidateCard } from "@/components/reply/reply-candidate-card";
 
 interface Props {
@@ -16,11 +15,15 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function extractName(sender: string): string {
+  const match = sender.match(/^([^<]+)</);
+  if (match) return match[1].trim();
+  return sender.split("@")[0];
+}
+
 export function MessageDetail({ message }: Props) {
   const [candidates, setCandidates] = useState<ReplyCandidate[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(
-    null,
-  );
+  const [selectedCandidate, setSelectedCandidate] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [loading, setLoading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -115,27 +118,22 @@ export function MessageDetail({ message }: Props) {
         }),
       });
       const data = await res.json();
+      const ch = data.data?.sendChannel ?? null;
       if (data.success) {
-        const channel = data.data?.sendChannel;
-        if (channel === "gmail_api") {
-          setSendStatus("Sent via Gmail");
-        } else if (channel === "mock") {
-          setSendStatus(
-            "Sent (mock — not delivered). Gmail tokens may have expired; try reconnecting in Settings.",
-          );
+        if (ch === "gmail_api") {
+          setSendStatus("sent_gmail");
+        } else if (ch === "mock") {
+          setSendStatus("sent_mock");
         } else {
-          setSendStatus("Sent");
+          setSendStatus("sent_unknown");
         }
       } else {
-        const channel = data.data?.sendChannel;
-        if (channel === "gmail_api_error") {
-          setSendStatus(`Gmail send failed: ${data.error}`);
-        } else {
-          setSendStatus(`Send failed: ${data.error}`);
-        }
+        setSendStatus("error");
+        setGenerateError(data.error ?? "Send failed");
       }
     } catch {
-      setSendStatus("Network error — could not send");
+      setSendStatus("error");
+      setGenerateError("Network error — could not send");
     } finally {
       setLoading(false);
     }
@@ -146,159 +144,256 @@ export function MessageDetail({ message }: Props) {
     timeStyle: "short",
   });
 
+  const senderName = extractName(message.sender);
+  const isGmail = message.provider === "gmail";
+  const isSent = sendStatus?.startsWith("sent_");
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-white">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2 mb-1">
-          <ProviderIcon provider={message.provider} />
-          <span className="font-medium text-gray-900">{message.sender}</span>
+      <div className="px-6 py-5 border-b border-gray-100">
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex-1 min-w-0">
+            {message.subject && (
+              <h2 className="text-lg font-semibold text-gray-900 mb-1 leading-snug">
+                {message.subject}
+              </h2>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-gray-700">{senderName}</span>
+              <span className="text-xs text-gray-300">·</span>
+              <span className="text-xs text-gray-400">{time}</span>
+              <span className="text-xs text-gray-300">·</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                isGmail ? "bg-red-50 text-red-500" : "bg-purple-50 text-purple-500"
+              }`}>
+                {isGmail ? "Gmail" : "Slack"}
+              </span>
+            </div>
+          </div>
           <RiskBadge level={message.riskLevel} />
         </div>
-        {message.subject && (
-          <h2 className="text-lg font-semibold text-gray-900 mt-1">
-            {message.subject}
-          </h2>
+        {message.sender.includes("<") && (
+          <p className="text-xs text-gray-400 truncate">{message.sender}</p>
         )}
-        <p className="text-xs text-gray-400 mt-1">{time}</p>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="bg-gray-50 rounded-lg p-4 mb-4">
-          {sanitizedHtml ? (
-            <div
-              className="prose prose-sm max-w-none text-gray-800 [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_img]:rounded"
-              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
-            />
-          ) : message.content && message.content !== "(No content)" ? (
-            <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
-              {message.content}
-            </p>
-          ) : (
-            <p className="text-sm text-gray-400 italic">
-              No text content available for this message.
-            </p>
-          )}
-        </div>
-
-        {/* Attachments */}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mb-4 border border-gray-200 rounded-lg p-3">
-            <p className="text-xs font-medium text-gray-500 mb-2">
-              Attachments ({message.attachments.length})
-            </p>
-            <div className="space-y-1.5">
-              {message.attachments.map((att, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 text-sm text-gray-700 bg-gray-50 rounded px-3 py-2"
-                >
-                  <svg
-                    className="w-4 h-4 text-gray-400 shrink-0"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                    />
-                  </svg>
-                  <span className="truncate flex-1">{att.filename}</span>
-                  <span className="text-xs text-gray-400 shrink-0">
-                    {att.mimeType.split("/").pop()} ·{" "}
-                    {formatFileSize(att.size)}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-gray-400 mt-2 italic">
-              Attachment download coming soon
-            </p>
-          </div>
-        )}
-
-        {/* Reply section */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-            >
-              {loading ? "Generating..." : "Generate Replies"}
-            </button>
-            {generateError && (
-              <span className="text-sm text-red-500">{generateError}</span>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-6 py-5 space-y-5">
+          {/* Email body */}
+          <div className="border border-gray-100 rounded-xl bg-gray-50/60 p-5">
+            {sanitizedHtml ? (
+              <div
+                className="prose prose-sm max-w-none text-gray-800 leading-relaxed [&_a]:text-blue-600 [&_a]:underline [&_img]:max-w-full [&_img]:rounded [&_blockquote]:border-l-2 [&_blockquote]:border-gray-300 [&_blockquote]:pl-3 [&_blockquote]:text-gray-500"
+                dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
+              />
+            ) : message.content && message.content !== "(No content)" ? (
+              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                {message.content}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-400 italic">
+                No content available for this message.
+              </p>
             )}
           </div>
 
-          {candidates.length > 0 && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-gray-700">
-                  Reply Candidates
-                </p>
-                {replySource && (
-                  <span
-                    className={`text-xs px-1.5 py-0.5 rounded ${
-                      replySource === "openai"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-100 text-gray-500"
-                    }`}
+          {/* Attachments */}
+          {message.attachments && message.attachments.length > 0 && (
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wider text-gray-400 mb-2">
+                Attachments ({message.attachments.length})
+              </p>
+              <div className="grid gap-2">
+                {message.attachments.map((att, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 border border-gray-200 rounded-lg px-3 py-2.5 bg-white hover:border-gray-300 transition-colors"
                   >
-                    {replySource === "openai" ? "AI generated" : "mock fallback"}
-                  </span>
-                )}
+                    <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-700 truncate">{att.filename}</p>
+                      <p className="text-[11px] text-gray-400">{formatFileSize(att.size)}</p>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400 bg-gray-50 px-2 py-0.5 rounded shrink-0">
+                      {att.mimeType.split("/").pop()}
+                    </span>
+                  </div>
+                ))}
               </div>
-              {candidates.map((c) => (
-                <ReplyCandidateCard
-                  key={c.id}
-                  candidate={c}
-                  isSelected={selectedCandidate === c.id}
-                  onSelect={() => handleSelectCandidate(c)}
-                />
-              ))}
             </div>
           )}
 
-          {(candidates.length > 0 || replyText) && (
-            <div className="space-y-2 pt-2 border-t border-gray-100">
-              <p className="text-sm font-medium text-gray-700">Edit & Send</p>
+          {/* Divider */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100" /></div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-3 text-xs font-medium uppercase tracking-wider text-gray-300">AI Reply</span>
+            </div>
+          </div>
+
+          {/* Generate button */}
+          {candidates.length === 0 && !isSent && (
+            <div className="text-center py-2">
+              <button
+                onClick={handleGenerate}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm hover:shadow"
+              >
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456z" />
+                    </svg>
+                    Generate AI Reply
+                  </>
+                )}
+              </button>
+              {generateError && !isSent && (
+                <p className="text-sm text-red-500 mt-2">{generateError}</p>
+              )}
+            </div>
+          )}
+
+          {/* Reply candidates */}
+          {candidates.length > 0 && !isSent && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
+                  Choose a reply
+                </p>
+                {replySource && (
+                  <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                    replySource === "openai"
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {replySource === "openai" ? (
+                      <>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                        </svg>
+                        AI Generated
+                      </>
+                    ) : "Fallback Reply"}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {candidates.map((c, idx) => (
+                  <ReplyCandidateCard
+                    key={c.id}
+                    candidate={c}
+                    index={idx + 1}
+                    isSelected={selectedCandidate === c.id}
+                    onSelect={() => handleSelectCandidate(c)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Composer */}
+          {(candidates.length > 0 || replyText) && !isSent && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium uppercase tracking-wider text-gray-400">
+                  Compose
+                </p>
+                <span className="text-[11px] text-gray-400">To: {senderName}</span>
+              </div>
               <textarea
                 value={replyText}
                 onChange={(e) => setReplyText(e.target.value)}
                 rows={5}
-                className="w-full border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
+                className="w-full border border-gray-200 rounded-xl p-4 text-sm leading-relaxed text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y bg-white placeholder:text-gray-300"
                 placeholder="Edit your reply before sending..."
               />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between">
                 <button
                   onClick={handleSend}
                   disabled={loading || !replyText.trim()}
-                  className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 text-white text-sm font-medium rounded-xl hover:bg-green-700 disabled:opacity-40 transition-all shadow-sm hover:shadow"
                 >
-                  Send Reply
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                      </svg>
+                      Send Reply
+                    </>
+                  )}
                 </button>
-                {sendStatus && (
-                  <span
-                    className={`text-sm ${
-                      sendStatus === "Sent via Gmail"
-                        ? "text-green-600"
-                        : sendStatus.startsWith("Sent (mock")
-                          ? "text-yellow-600"
-                          : sendStatus.startsWith("Sent")
-                            ? "text-green-600"
-                            : "text-red-600"
-                    }`}
-                  >
-                    {sendStatus}
-                  </span>
+                {generateError && (
+                  <span className="text-xs text-red-500">{generateError}</span>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Send result */}
+          {isSent && (
+            <div className={`rounded-xl border p-5 text-center ${
+              sendStatus === "sent_gmail"
+                ? "border-green-200 bg-green-50"
+                : sendStatus === "sent_mock"
+                  ? "border-yellow-200 bg-yellow-50"
+                  : "border-gray-200 bg-gray-50"
+            }`}>
+              {sendStatus === "sent_gmail" && (
+                <>
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-semibold text-green-700">Reply sent via Gmail</p>
+                  <p className="text-xs text-green-600 mt-1">Delivered to {senderName}&apos;s inbox</p>
+                </>
+              )}
+              {sendStatus === "sent_mock" && (
+                <>
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-yellow-100 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-semibold text-yellow-700">Sent via mock (not delivered)</p>
+                  <p className="text-xs text-yellow-600 mt-1">Gmail connection may have expired.</p>
+                  <a href="/settings" className="inline-block text-xs text-yellow-700 underline mt-2">Reconnect in Settings →</a>
+                </>
+              )}
+              {sendStatus === "sent_unknown" && (
+                <p className="text-sm text-gray-600">Reply sent</p>
+              )}
+            </div>
+          )}
+
+          {sendStatus === "error" && (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center">
+              <p className="text-sm font-medium text-red-700">Send failed</p>
+              <p className="text-xs text-red-500 mt-1">{generateError}</p>
+              <button
+                onClick={handleSend}
+                className="mt-3 text-xs font-medium text-red-600 hover:text-red-800 underline"
+              >
+                Retry
+              </button>
             </div>
           )}
         </div>
