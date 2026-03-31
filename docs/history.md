@@ -1970,6 +1970,138 @@ pollux/
 
 ---
 
+## 阶段 7：Persistence / Reliability Hardening
+
+**完成日期**: 2026-03-25
+
+### 7.1 目标
+
+将 Pollux 从"可演示的单实例 MVP"推进到"更稳定、可持续使用的产品原型"：
+- 关键状态从进程内存迁移到 Neon PostgreSQL
+- 建立可积累的发送/风格反馈数据
+- 提高 reply/send 后端一致性
+
+### 7.2 数据库选型
+
+- **Neon** — Serverless PostgreSQL
+- Prisma ORM 直连，`DATABASE_URL` 使用 Neon 连接字符串 + `?sslmode=require`
+- Prisma Client 使用 globalThis 单例模式（`src/lib/prisma.ts`）
+
+### 7.3 Prisma Schema 重写
+
+去掉阶段 1 的未使用旧模型（UserProfile、ConnectedAccount、MessageItem、旧 StyleCard/StyleExample），替换为 3 个精简表：
+
+| 表 | 主键 | 用途 |
+|---|------|------|
+| `GmailToken` | `userId` (Auth0 sub) | Gmail OAuth token 持久化 |
+| `StyleProfile` | `userId` (Auth0 sub) | 用户风格 profile（JSON 字段存完整 UserStyleProfile）|
+| `SendLog` | `cuid` | 每次发送的完整记录，含候选文本、最终文本、编辑状态、风格快照 |
+
+### 7.4 Gmail Token 持久化
+
+**模式：内存缓存 + DB 持久化**
+
+- 读操作（`getGmailTokens`, `hasGmailConnection`）保持同步，从内存读取
+- 写操作（`setGmailTokens`）同步写内存 + 异步写 DB（`prisma.gmailToken.upsert`）
+- 冷启动：`ensureTokensLoaded()` 从 DB 加载所有 token 到内存，仅执行一次
+- 效果：**服务重启后 Gmail 连接不丢失**
+
+**调用链适配：**
+- `client.ts`：token refresh 回写用 `void setGmailTokens(...)` 
+- `callback/route.ts`：`await setGmailTokens(...)`
+- `account-service.ts`、`inbox-service.ts`：入口调用 `await ensureTokensLoaded()`
+- `send-service.ts`：入口调用 `await ensureTokensLoaded()`
+- `style/learn/route.ts`：`await ensureTokensLoaded()`
+
+### 7.5 Style Profile 持久化
+
+**模式：内存缓存 + DB 持久化（按用户懒加载）**
+
+- 读操作保持同步
+- 写操作：`await setUserStyleProfile(userId, profile)` → 内存 + `prisma.styleProfile.upsert`
+- 懒加载：`ensureStyleLoaded(userId)` 仅在该用户首次访问时从 DB 加载
+- 效果：**服务重启后风格配置不丢失**
+
+**调用链适配：**
+- `style/route.ts` GET/POST：`await ensureStyleLoaded(userId)`
+- `reply-service.ts`：`await ensureStyleLoaded(userId)`
+
+### 7.6 SendLog 持久化
+
+每次发送后自动记录到 DB：
+
+| 字段 | 来源 |
+|------|------|
+| `userId` | Auth0 session |
+| `provider` | 消息来源 |
+| `sourceMessageId/ThreadId/Sender/Subject` | 后端从 Gmail API 获取的真实值 |
+| `candidateText` | AI 生成的候选回复 |
+| `finalText` | 用户最终发送的文本 |
+| `wasEdited` | candidateText vs finalText 比较 |
+| `styleSource / stylePersona` | 当前用户风格快照 |
+| `sendChannel` | `gmail_api` / `mock` / `gmail_api_error` |
+| `success / error` | 发送结果 |
+
+持久化在 `send-service.ts` 中以 fire-and-forget 方式执行，不阻塞发送响应。
+
+### 7.7 后端一致性补强
+
+#### `/api/reply/generate`
+
+- 优先以 `messageId` 从 Gmail API 拉取真实消息详情（sender、subject、content）
+- 仅在 Gmail 不可用时 fallback 到前端传入数据
+- 前端只需传 `messageId`
+
+#### `/api/send`
+
+- 同样优先以 `messageId` 从 Gmail API 拉取真实 threadId、sender、subject
+- 确保 threading 和收件人一致性由后端保证
+- 新增 `candidateText` 字段，支持编辑检测
+
+**新增工具：`src/lib/gmail/message-fetcher.ts`**
+- `fetchMessageById(userId, messageId)` → `{ id, threadId, sender, subject, content, provider }`
+- 自动剥离 `gmail-` 前缀
+
+### 7.8 改动文件清单
+
+| 文件 | 状态 |
+|------|------|
+| `prisma/schema.prisma` | 重写 — 3 个精简表 |
+| `src/lib/prisma.ts` | 新增 — Prisma client singleton |
+| `src/lib/gmail/token-store.ts` | 重写 — 内存缓存 + DB 持久化 |
+| `src/lib/style/style-store.ts` | 重写 — 内存缓存 + DB 持久化 |
+| `src/lib/gmail/message-fetcher.ts` | 新增 — 后端 messageId 消息获取 |
+| `src/lib/gmail/client.ts` | 修改 — token refresh 异步适配 |
+| `src/app/api/auth/gmail/callback/route.ts` | 修改 — await setGmailTokens |
+| `src/lib/services/account-service.ts` | 修改 — ensureTokensLoaded |
+| `src/lib/services/inbox-service.ts` | 修改 — ensureTokensLoaded |
+| `src/lib/services/send-service.ts` | 重写 — ensureTokensLoaded + SendLog 持久化 |
+| `src/lib/services/reply-service.ts` | 修改 — ensureStyleLoaded |
+| `src/app/api/reply/generate/route.ts` | 重写 — 后端 messageId 拉真实消息 |
+| `src/app/api/send/route.ts` | 重写 — 后端 messageId + SendLog |
+| `src/app/api/style/route.ts` | 修改 — ensureStyleLoaded |
+| `src/app/api/style/learn/route.ts` | 修改 — ensureTokensLoaded + await writes |
+| `.env.example` | 修改 — DATABASE_URL 改为 Neon 格式 |
+
+### 7.9 部署步骤
+
+1. 在 Neon 控制台创建项目，获取连接字符串
+2. 在 `.env.local` 中设置 `DATABASE_URL=postgresql://...@ep-xxx.neon.tech/pollux?sslmode=require`
+3. 运行 `npx prisma db push` 创建表
+4. 重启 dev server，首次请求会自动从 DB 加载已有数据
+
+### 7.10 验证
+
+- `prisma generate` 成功
+- `next build` 通过（exit_code: 0）
+- 服务重启后 Gmail 连接状态从 DB 恢复
+- 服务重启后用户风格配置从 DB 恢复
+- 发送回复后 SendLog 写入 DB
+- reply/generate 后端自行拉取 Gmail 消息详情
+- send 后端自行拉取 Gmail 消息详情
+
+---
+
 ## 技术栈总览
 
 | 技术 | 版本 | 用途 |

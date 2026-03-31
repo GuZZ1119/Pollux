@@ -1,7 +1,8 @@
 import type { SendResult } from "@/lib/adapters/send";
 import { MockSlackSendAdapter } from "@/lib/adapters/send";
 import { GmailSendAdapter } from "@/lib/adapters/gmail-send";
-import { hasGmailConnection, getStoreDebugInfo } from "@/lib/gmail/token-store";
+import { hasGmailConnection, getStoreDebugInfo, ensureTokensLoaded } from "@/lib/gmail/token-store";
+import { prisma } from "@/lib/prisma";
 import type { Provider } from "@/lib/types";
 
 export interface SendInput {
@@ -12,6 +13,9 @@ export interface SendInput {
   sender?: string;
   subject?: string;
   userId?: string;
+  candidateText?: string;
+  styleSource?: string;
+  stylePersona?: string;
 }
 
 export type SendChannel = "gmail_api" | "mock" | "gmail_api_error";
@@ -25,21 +29,24 @@ export async function sendReply(input: SendInput): Promise<SendReplyResult> {
   const { provider, replyText, threadId, sender, subject, userId } = input;
   const recipientEmail = extractEmail(sender ?? "");
 
-  const hasUser = Boolean(userId);
+  if (userId) await ensureTokensLoaded();
+
   const hasConnection = userId ? hasGmailConnection(userId) : false;
   const storeInfo = getStoreDebugInfo();
 
   console.log(
     `[send-service] provider=${provider}, userId="${userId}", ` +
     `hasGmailConnection=${hasConnection}, recipient=${recipientEmail}, ` +
-    `storeSize=${storeInfo.size}, storeKeys=${JSON.stringify(storeInfo.keys)}`,
+    `storeSize=${storeInfo.size}`,
   );
+
+  let result: SendReplyResult;
 
   if (provider === "gmail" && userId && hasConnection) {
     try {
       const adapter = new GmailSendAdapter(userId);
       const rawMessageId = stripGmailPrefix(input.messageId);
-      const result = await adapter.send(
+      const sendResult = await adapter.send(
         recipientEmail,
         replyText,
         threadId,
@@ -47,32 +54,63 @@ export async function sendReply(input: SendInput): Promise<SendReplyResult> {
         rawMessageId,
       );
       console.log(
-        `[send-service] Gmail send SUCCESS: externalId=${result.externalMessageId}`,
+        `[send-service] Gmail send SUCCESS: externalId=${sendResult.externalMessageId}`,
       );
-      return { ...result, provider: "gmail", sendChannel: "gmail_api" };
+      result = { ...sendResult, provider: "gmail", sendChannel: "gmail_api" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Gmail send failed";
       console.error("[send-service] Gmail send ERROR:", e);
-      return {
+      result = {
         success: false,
         error: msg,
         provider: "gmail",
         sendChannel: "gmail_api_error",
       };
     }
+  } else {
+    if (provider === "gmail") {
+      console.warn(
+        `[send-service] Gmail requested but falling back to mock. ` +
+        `hasGmailConnection=${hasConnection}`,
+      );
+    }
+    const adapter = new MockSlackSendAdapter();
+    const sendResult = await adapter.send(recipientEmail, replyText, threadId);
+    result = { ...sendResult, provider, sendChannel: "mock" };
   }
 
-  if (provider === "gmail") {
-    console.warn(
-      `[send-service] Gmail requested but falling back to mock. ` +
-      `Reason: userId=${hasUser ? "OK" : "MISSING"}, ` +
-      `hasGmailConnection=${hasConnection ? "OK" : "FALSE (token store may have been cleared by dev server restart)"}`,
+  if (userId) {
+    persistSendLog(input, result).catch((e) =>
+      console.error("[send-service] SendLog persist failed:", e),
     );
   }
 
-  const adapter = new MockSlackSendAdapter();
-  const result = await adapter.send(recipientEmail, replyText, threadId);
-  return { ...result, provider, sendChannel: "mock" };
+  return result;
+}
+
+async function persistSendLog(input: SendInput, result: SendReplyResult): Promise<void> {
+  const wasEdited = input.candidateText
+    ? input.candidateText.trim() !== input.replyText.trim()
+    : false;
+
+  await prisma.sendLog.create({
+    data: {
+      userId: input.userId!,
+      provider: input.provider,
+      sourceMessageId: input.messageId,
+      sourceThreadId: input.threadId ?? null,
+      sourceSender: input.sender ?? null,
+      sourceSubject: input.subject ?? null,
+      candidateText: input.candidateText ?? null,
+      finalText: input.replyText,
+      wasEdited,
+      styleSource: input.styleSource ?? null,
+      stylePersona: input.stylePersona ?? null,
+      sendChannel: result.sendChannel,
+      success: result.success,
+      error: result.error ?? null,
+    },
+  });
 }
 
 function stripGmailPrefix(messageId: string): string {

@@ -20,7 +20,7 @@ export function createGmailClient(userId: string): gmail_v1.Gmail {
   });
 
   oauth2Client.on("tokens", (refreshed) => {
-    setGmailTokens(userId, {
+    void setGmailTokens(userId, {
       ...tokens,
       accessToken: refreshed.access_token ?? tokens.accessToken,
       expiresAt: refreshed.expiry_date ?? Date.now() + 3600 * 1000,

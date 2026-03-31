@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
 import { generateReplies } from "@/lib/services/reply-service";
 import { logEvent } from "@/lib/services/event-log";
+import { ensureTokensLoaded, hasGmailConnection } from "@/lib/gmail/token-store";
+import { fetchMessageById } from "@/lib/gmail/message-fetcher";
 
 export async function POST(request: Request) {
   try {
@@ -9,24 +11,51 @@ export async function POST(request: Request) {
     const userId = session?.user.sub ?? "anonymous";
 
     const body = await request.json();
-    const { messageId, content, sender, subject, provider } = body;
+    const { messageId, content: fallbackContent, sender: fallbackSender, subject: fallbackSubject, provider: fallbackProvider } = body;
 
-    if (!messageId || !content) {
+    if (!messageId) {
       return NextResponse.json(
-        { success: false, error: "messageId and content are required" },
+        { success: false, error: "messageId is required" },
+        { status: 400 },
+      );
+    }
+
+    let content = fallbackContent;
+    let sender = fallbackSender ?? "Unknown";
+    let subject = fallbackSubject;
+    let provider = fallbackProvider ?? "gmail";
+
+    if (userId !== "anonymous" && messageId.startsWith("gmail-")) {
+      await ensureTokensLoaded();
+      if (hasGmailConnection(userId)) {
+        try {
+          const msg = await fetchMessageById(userId, messageId);
+          content = msg.content;
+          sender = msg.sender;
+          subject = msg.subject;
+          provider = msg.provider;
+        } catch (e) {
+          console.warn("[reply/generate] Backend fetch failed, using frontend data:", e);
+        }
+      }
+    }
+
+    if (!content) {
+      return NextResponse.json(
+        { success: false, error: "No message content available" },
         { status: 400 },
       );
     }
 
     const { candidates, source } = await generateReplies(
-      { content, sender: sender ?? "Unknown", subject, provider: provider ?? "gmail" },
+      { content, sender, subject, provider },
       userId,
     );
 
     logEvent({
       eventType: "reply_generated",
       userId,
-      provider: provider ?? "gmail",
+      provider,
       messageId,
       metadata: { source, candidateCount: candidates.length },
     });

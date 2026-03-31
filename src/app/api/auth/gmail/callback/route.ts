@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       `scope="${tokens.scope}"`,
     );
 
-    setGmailTokens(userId, {
+    await setGmailTokens(userId, {
       accessToken: tokens.access_token!,
       refreshToken: tokens.refresh_token!,
       scope: tokens.scope ?? "",

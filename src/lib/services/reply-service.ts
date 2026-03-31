@@ -1,6 +1,6 @@
 import type { ReplyCandidate } from "@/lib/types";
 import { generateRepliesWithOpenAI, type GenerateInput, type EnhancedStyleContext } from "@/lib/openai/generate";
-import { getUserStyleProfile } from "@/lib/style/style-store";
+import { getUserStyleProfile, ensureStyleLoaded } from "@/lib/style/style-store";
 import { mockStyleCard } from "@/lib/mocks/style";
 import { defaultMockReplies } from "@/lib/mocks/replies";
 
@@ -17,6 +17,8 @@ export async function generateReplies(input: GenerateInput, userId?: string): Pr
     console.warn("[reply-service] OPENAI_API_KEY not set — returning mock replies");
     return { candidates: defaultMockReplies, source: "fallback_mock" };
   }
+
+  if (userId) await ensureStyleLoaded(userId);
 
   const profile = userId ? getUserStyleProfile(userId) : null;
   const styleCtx: EnhancedStyleContext = profile

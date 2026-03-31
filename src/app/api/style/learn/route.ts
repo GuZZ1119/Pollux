@@ -3,7 +3,7 @@ import { auth0 } from "@/lib/auth0";
 import { setUserStyleProfile } from "@/lib/style/style-store";
 import { extractStyleFromSamples } from "@/lib/style/extract";
 import { fetchGmailSentEmails } from "@/lib/gmail/fetch-sent";
-import { hasGmailConnection } from "@/lib/gmail/token-store";
+import { hasGmailConnection, ensureTokensLoaded } from "@/lib/gmail/token-store";
 import type { UserStyleProfile, StyleSource } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -21,6 +21,7 @@ export async function POST(request: Request) {
     let styleSource: StyleSource = "manual_samples";
 
     if (source === "gmail_sent") {
+      await ensureTokensLoaded();
       if (!hasGmailConnection(userId)) {
         return NextResponse.json(
           { success: false, error: "Gmail is not connected. Please connect Gmail in Settings first." },
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    setUserStyleProfile(userId, profile);
+    await setUserStyleProfile(userId, profile);
 
     return NextResponse.json({ success: true, data: profile });
   } catch (e) {

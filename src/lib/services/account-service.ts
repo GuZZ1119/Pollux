@@ -1,10 +1,11 @@
 import type { ConnectedAccount } from "@/lib/types";
-import { hasGmailConnection, getGmailTokens } from "@/lib/gmail/token-store";
+import { hasGmailConnection, getGmailTokens, ensureTokensLoaded } from "@/lib/gmail/token-store";
 
 export async function getConnectedAccounts(userId?: string): Promise<ConnectedAccount[]> {
+  if (userId) await ensureTokensLoaded();
+
   const accounts: ConnectedAccount[] = [];
 
-  // Gmail — real connection check
   if (userId && hasGmailConnection(userId)) {
     const tokens = getGmailTokens(userId);
     accounts.push({
@@ -24,7 +25,6 @@ export async function getConnectedAccounts(userId?: string): Promise<ConnectedAc
     });
   }
 
-  // Slack — still mock / disconnected for Phase 2
   accounts.push({
     id: "acc-slack-mock",
     provider: "slack",

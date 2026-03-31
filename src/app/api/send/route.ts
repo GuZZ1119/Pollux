@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
 import { sendReply } from "@/lib/services/send-service";
 import { logEvent } from "@/lib/services/event-log";
+import { ensureTokensLoaded, hasGmailConnection } from "@/lib/gmail/token-store";
+import { fetchMessageById } from "@/lib/gmail/message-fetcher";
+import { getUserStyleProfile } from "@/lib/style/style-store";
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +12,15 @@ export async function POST(request: Request) {
     const userId = session?.user.sub ?? undefined;
 
     const body = await request.json();
-    const { messageId, replyText, provider, threadId, sender, subject } = body;
+    const {
+      messageId,
+      replyText,
+      provider: fallbackProvider,
+      threadId: fallbackThreadId,
+      sender: fallbackSender,
+      subject: fallbackSubject,
+      candidateText,
+    } = body;
 
     if (!messageId || !replyText) {
       return NextResponse.json(
@@ -18,14 +29,39 @@ export async function POST(request: Request) {
       );
     }
 
+    let provider = fallbackProvider ?? "gmail";
+    let threadId = fallbackThreadId;
+    let sender = fallbackSender;
+    let subject = fallbackSubject;
+
+    if (userId && messageId.startsWith("gmail-")) {
+      await ensureTokensLoaded();
+      if (hasGmailConnection(userId)) {
+        try {
+          const msg = await fetchMessageById(userId, messageId);
+          provider = msg.provider;
+          threadId = msg.threadId;
+          sender = msg.sender;
+          subject = msg.subject;
+        } catch (e) {
+          console.warn("[send] Backend fetch failed, using frontend data:", e);
+        }
+      }
+    }
+
+    const styleProfile = userId ? getUserStyleProfile(userId) : null;
+
     const result = await sendReply({
       messageId,
       replyText,
-      provider: provider ?? "gmail",
+      provider,
       threadId,
       sender,
       subject,
       userId,
+      candidateText,
+      styleSource: styleProfile?.source,
+      stylePersona: styleProfile?.styleCard.persona,
     });
 
     logEvent({

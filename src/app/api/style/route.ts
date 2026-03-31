@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth0 } from "@/lib/auth0";
-import { getUserStyleProfile, setUserStyleProfile } from "@/lib/style/style-store";
+import { getUserStyleProfile, setUserStyleProfile, ensureStyleLoaded } from "@/lib/style/style-store";
 import { STYLE_PRESETS } from "@/lib/style/presets";
 import type { UserStyleProfile } from "@/lib/types";
 
@@ -10,6 +10,7 @@ export async function GET() {
     return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 });
   }
 
+  await ensureStyleLoaded(session.user.sub);
   const profile = getUserStyleProfile(session.user.sub);
   return NextResponse.json({ success: true, data: profile });
 }
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
   }
 
   const userId = session.user.sub;
+  await ensureStyleLoaded(userId);
+
   const body = await request.json();
   const { action, presetId, guardrails } = body;
 
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     };
 
-    setUserStyleProfile(userId, profile);
+    await setUserStyleProfile(userId, profile);
     return NextResponse.json({ success: true, data: profile });
   }
 
@@ -50,7 +53,7 @@ export async function POST(request: Request) {
     }
     existing.guardrails = guardrails ?? [];
     existing.updatedAt = new Date().toISOString();
-    setUserStyleProfile(userId, existing);
+    await setUserStyleProfile(userId, existing);
     return NextResponse.json({ success: true, data: existing });
   }
 
