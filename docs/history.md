@@ -1452,6 +1452,232 @@ Snippet 文字灰度也跟随 viewed 状态：未看过 `text-gray-400`，看过
 
 ---
 
+## 阶段 5：Daily Brief / 外部事件总结
+
+**状态：✅ 已完成**  
+**完成日期：2026-03-31**
+
+目标：让 Pollux 不只是显示单条邮件，而是能在 Dashboard 上总结"今天外部世界发生了什么、哪些消息值得处理、接下来该做什么"。设计为 provider-agnostic，当前基于 Gmail + Slack mock 数据工作，后续可直接扩展 Outlook 等新平台。
+
+### 5.1 Summary Service — 聚合层
+
+**位置：** `src/lib/services/summary-service.ts`
+
+provider-agnostic 的消息聚合服务，输入任意 `MessageItem[]`，输出结构化 `DailyBrief`。
+
+#### 5.1.1 核心函数
+
+```typescript
+generateDailyBrief(allMessages: MessageItem[], options?: { useAI?: boolean }): Promise<DailyBrief>
+```
+
+处理流程：
+
+| 步骤 | 逻辑 |
+|------|------|
+| 1. 时间过滤 | 优先取今天的消息；如果今天无消息，fallback 到全部消息并标记为 "Recent" |
+| 2. Provider 计数 | `computeProviderCounts()` — 按 provider 分组统计 total/unread |
+| 3. Attention 提取 | `extractAttentionItems()` — HIGH/MEDIUM risk + unread，按风险排序，最多 8 条 |
+| 4. Action 提取 | `extractActionItems()` — 正则关键词匹配，提取待处理事项，最多 10 条 |
+| 5. Summary 生成 | AI 或 rule-based 自然语言摘要 |
+| 6. Headline 生成 | 根据 attention 数量生成一句话标题 |
+
+#### 5.1.2 Action Item 提取
+
+10 种 action 模式，基于 subject + content 正则匹配：
+
+| 类型 | 触发关键词 | 输出动作 |
+|------|-----------|---------|
+| payment | invoice, payment, billing, wire transfer, receipt, overdue | "Process payment" |
+| deadline | deadline, due date, due by | "Review deadline" |
+| interview | interview, screening, phone screen | "Prepare for interview" |
+| contract | contract, nda, agreement, terms | "Review document" |
+| follow_up | follow up, get back, circle back, ping back | "Follow up" |
+| meeting | meeting, calendar, schedule, appointment, sync | "Check schedule" |
+| delivery | delivery, shipping, tracking, package, shipment | "Track delivery" |
+| review | test, testing, QA, staging, deploy, release | "Review & test" |
+| proposal | proposal, quote, estimate, pricing | "Review proposal" |
+| approval | approval, approve, sign off | "Give approval" |
+
+每条 ActionItem 包含 `type`、`description`、`sourceMessageId`、`sourceProvider`、`sender`、`priority`，设计完全 provider-agnostic。
+
+#### 5.1.3 Summary 文本生成
+
+**Rule-based（默认）**：
+
+根据 provider 计数、attention 数量、action 数量拼接自然语言段落。示例：
+
+> "You received 12 messages today — 9 from gmail, 3 from slack. 1 high-risk and 2 medium-risk items need your attention. The most urgent is "Invoice Overdue" from Alice Corp. 4 action items detected, including payment, meeting, follow_up."
+
+**AI-powered（OpenAI 可用时）**：
+
+调用 `gpt-4o-mini`，传入消息列表、attention items、action items，要求生成 2-3 句 executive summary。
+- temperature: 0.5（偏确定性，避免编造）
+- max_tokens: 300
+- 失败时自动 fallback 到 rule-based
+
+`DailyBrief.sourceMode` 标记实际使用的生成方式：
+
+| sourceMode | 含义 |
+|------------|------|
+| `ai_generated` | OpenAI 生成成功 |
+| `rule_based` | 未启用 AI 或 OPENAI_API_KEY 未设置 |
+| `fallback` | AI 调用失败，降级到规则版 |
+
+### 5.2 数据类型
+
+位置：`src/lib/types/index.ts`
+
+新增 5 个接口：
+
+```typescript
+interface AttentionItem {
+  messageId: string;
+  provider: string;        // 不绑定 Provider enum，可扩展
+  sender: string;
+  subject?: string;
+  reason: string;
+  riskLevel: RiskLevel;
+}
+
+interface ActionItem {
+  id: string;
+  type: string;
+  description: string;
+  sourceMessageId: string;
+  sourceProvider: string;  // 不绑定 Provider enum
+  sender: string;
+  priority: "high" | "medium" | "low";
+}
+
+interface ProviderCount {
+  provider: string;
+  total: number;
+  unread: number;
+}
+
+interface DailyBrief {
+  headline: string;
+  summaryText: string;
+  totalToday: number;
+  totalAll: number;
+  periodLabel: string;     // "Today" | "Recent"
+  providerCounts: ProviderCount[];
+  attentionItems: AttentionItem[];
+  actionItems: ActionItem[];
+  generatedAt: string;
+  sourceMode: "rule_based" | "ai_generated" | "fallback";
+}
+```
+
+**设计决策**：`provider` 字段使用 `string` 而非 `Provider` enum，使聚合层无需修改即可处理未来新增的 Outlook / Instagram / X 等平台数据。
+
+### 5.3 API 端点
+
+位置：`src/app/api/summary/route.ts`
+
+| 方法 | 路径 | 参数 | 说明 |
+|------|------|------|------|
+| GET | `/api/summary` | `?ai=false` 可禁用 AI | 获取 auth session → 拉取 inbox → 生成 DailyBrief |
+
+自动从 Auth0 session 获取 userId，复用现有 `getAggregatedInbox()` 获取消息数据。
+
+### 5.4 Dashboard 产品化改造
+
+位置：`src/app/dashboard/page.tsx` + `src/components/dashboard/daily-brief-card.tsx`
+
+Dashboard 从 milestone-checklist 风格改为产品 landing page：
+
+| 区域 | 内容 |
+|------|------|
+| Greeting | 根据时间自动切换 Good morning/afternoon/evening + 用户名 + 日期 |
+| Daily Brief（hero） | DailyBriefCard 客户端组件，异步加载 |
+| Quick Actions | 两个卡片：Open Inbox / Settings |
+| Connection Status | Gmail / Slack / Outlook 连接状态指示 |
+
+#### DailyBriefCard 组件
+
+客户端组件，`useEffect` 初始化时调用 `/api/summary`，支持手动 Refresh。
+
+UI 结构（从上到下）：
+
+| 区块 | 内容 |
+|------|------|
+| Header | ☀️ Daily Brief 标题 + period label + Refresh 按钮 |
+| Headline | 一句话要点（字号大，视觉焦点） |
+| Summary | 自然语言摘要段落 |
+| Stats row | 3 列 grid：Today/Total · Unread · Attention |
+| Provider breakdown | 每个 provider 彩色圆点 + total + unread |
+| Needs Attention | 风险色卡片列表（红/黄/蓝），显示 subject + sender + reason |
+| Action Items | 待办清单式列表，每条有 priority 标签（Urgent/Soon/Low） |
+| Footer | sourceMode 标签 + 生成时间 + "Open Inbox →" 链接 |
+
+三种加载状态：
+- **Loading**：skeleton 动画（卡片布局的占位骨架）
+- **Error**：错误信息 + Retry 按钮
+- **Empty**：消息为 0 时 summary 展示 "All clear — no new messages"
+
+### 5.5 新建文件
+
+| 文件 | 作用 |
+|------|------|
+| `src/lib/services/summary-service.ts` | Daily Brief 聚合服务（rule-based + AI summary） |
+| `src/app/api/summary/route.ts` | Summary REST API |
+| `src/components/dashboard/daily-brief-card.tsx` | Daily Brief 客户端组件 |
+
+### 5.6 修改文件
+
+| 文件 | 变更内容 |
+|------|----------|
+| `src/lib/types/index.ts` | 新增 `AttentionItem`、`ActionItem`、`ProviderCount`、`DailyBrief` 接口 |
+| `src/app/dashboard/page.tsx` | 完全重写 — 从 milestone checklist 改为 greeting + DailyBrief + quick actions + connection status |
+
+### 5.7 验收结果
+
+| 验收项 | 结果 |
+|--------|------|
+| `next build` 编译通过 | ✅ 零新增 lint 错误 |
+| Dashboard 显示 greeting + 日期 | ✅ 自动 Good morning/afternoon/evening |
+| DailyBrief skeleton loading | ✅ 骨架屏动画 |
+| DailyBrief headline + summary | ✅ 自然语言段落 |
+| Stats row（Today/Unread/Attention） | ✅ |
+| Provider breakdown | ✅ Gmail + Slack 计数 |
+| Attention items 列表 | ✅ 按风险等级彩色卡片 |
+| Action items 列表 | ✅ 待办式 + priority 标签 |
+| sourceMode 标签（AI/rule-based/fallback） | ✅ |
+| Refresh 按钮重新生成 | ✅ |
+| 无 OPENAI_API_KEY 时降级到 rule-based | ✅ |
+| 今天无消息时 fallback 到全部消息 | ✅ periodLabel 变为 "Recent" |
+| Quick Actions（Inbox/Settings）链接 | ✅ |
+| Connection Status（Gmail/Slack/Outlook） | ✅ |
+| 未登录页面 | ✅ Sign in 提示 |
+
+### 5.8 多平台扩展设计
+
+当前 summary-service 已经完全 provider-agnostic：
+
+| 扩展场景 | 需要做的 | 不需要改的 |
+|----------|---------|-----------|
+| 接入 Outlook | 新增 `OutlookInboxAdapter` 实现 `InboxAdapter` 接口 | summary-service、API route、DailyBriefCard |
+| 接入 Instagram DM | 新增 adapter，`MessageItem.provider = "instagram"` | summary-service 自动聚合 |
+| 接入 X (Twitter) DM | 新增 adapter，`MessageItem.provider = "x"` | summary-service 自动聚合 |
+
+关键设计点：
+- `ProviderCount.provider` / `AttentionItem.provider` / `ActionItem.sourceProvider` 均为 `string` 类型
+- Action 提取基于消息内容而非 provider，新平台自动生效
+- 风险分类基于 `classifyRisk()` 独立函数，与 provider 无关
+- `computeProviderCounts()` 使用 `Map` 动态分组，无硬编码 provider 列表
+
+### 5.9 当前明确不包含的内容
+
+- ❌ 真实 Outlook / Instagram / X 接入（仅设计了扩展接口）
+- ❌ AI summary 缓存（每次刷新重新生成）
+- ❌ 用户可配置的 attention/action 规则
+- ❌ Action items 状态持久化（完成/忽略）
+- ❌ 定时自动刷新 brief
+
+---
+
 ## 文件索引
 
 ```
@@ -1463,7 +1689,7 @@ pollux/
 │   │   ├── layout.tsx                         ← 02-A 修改
 │   │   ├── page.tsx                           ← 02-A 修改
 │   │   ├── globals.css
-│   │   ├── dashboard/page.tsx                 ← 03 修改
+│   │   ├── dashboard/page.tsx                 ← 05 重写（greeting + DailyBrief）
 │   │   ├── inbox/page.tsx                     ← 04 重写（Metrics + viewedIds + skeleton）
 │   │   ├── settings/page.tsx                  ← 04 重写（居中布局 + empty state）
 │   │   └── api/
@@ -1471,6 +1697,7 @@ pollux/
 │   │       ├── accounts/route.ts              ← 02-A 修改
 │   │       ├── reply/generate/route.ts        ← 03 修改（event log）
 │   │       ├── send/route.ts                  ← 03 修改（event log）
+│   │       ├── summary/route.ts               ← 05 新增（Daily Brief API）
 │   │       ├── events/route.ts                ← 03 新增（Event Log REST API）
 │   │       ├── attachments/
 │   │       │   └── [messageId]/
@@ -1483,6 +1710,8 @@ pollux/
 │   │   ├── layout/
 │   │   │   ├── app-shell.tsx                  ← 02-A 修改
 │   │   │   └── sidebar.tsx                    ← 04 修改（UserAvatar + tagline）
+│   │   ├── dashboard/
+│   │   │   └── daily-brief-card.tsx           ← 05 新增（Daily Brief 客户端组件）
 │   │   ├── inbox/
 │   │   │   ├── message-list.tsx                ← 04 重写（viewedIds prop）
 │   │   │   ├── message-list-item.tsx          ← 04 重写（三态视觉 + 相对时间）
@@ -1500,7 +1729,7 @@ pollux/
 │       ├── auth0.ts                           ← 02-A 新增
 │       ├── config.ts                          ← 03 新增（INBOX_MAX_RESULTS）
 │       ├── viewed-store.ts                    ← 04 新建（localStorage viewed 管理）
-│       ├── types/index.ts                     ← 03 修改（Attachment + InboxFetchOptions）
+│       ├── types/index.ts                     ← 05 修改（DailyBrief + AttentionItem + ActionItem + ProviderCount）
 │       ├── gmail/                             ← 02-A 新增
 │       │   ├── oauth.ts
 │       │   ├── token-store.ts
@@ -1521,7 +1750,8 @@ pollux/
 │           ├── account-service.ts             ← 02-A 修改
 │           ├── send-service.ts                ← 02-D 修改
 │           ├── risk-service.ts                ← 03 新增（classifyRisk）
-│           └── event-log.ts                   ← 03 新增（内存事件日志）
+│           ├── event-log.ts                   ← 03 新增（内存事件日志）
+│           └── summary-service.ts             ← 05 新增（Daily Brief 聚合）
 ├── docs/
 │   ├── prompts/
 │   │   ├── 01-cursor-min-scaffold.md
@@ -1535,6 +1765,208 @@ pollux/
 ├── postcss.config.mjs
 └── eslint.config.mjs
 ```
+
+---
+
+## 阶段 5.1：Daily Brief 稳定性修正
+
+**完成日期**: 2026-03-25
+
+### 5.1.1 修正内容
+
+本轮对阶段 5 的 Daily Brief 做了 5 项针对性修正，不改变整体架构，只提升稳定性和可信度。
+
+### 5.1.2 时区判断修正
+
+- `isToday()` 改用 `Intl.DateTimeFormat("en-CA", { timeZone: "Australia/Sydney" })` 进行日期比较
+- 统一按 `Australia/Sydney` 时区判断"今天"
+- 时间解析失败时安全返回 `false`，不会导致崩溃
+
+### 5.1.3 轻量缓存
+
+- `src/app/api/summary/route.ts` 增加 globalThis 内存缓存（同 token-store 模式）
+- 缓存 key 为 `userId`，TTL 为 3 分钟
+- 默认请求命中缓存时直接返回，响应带 `cached: true`
+- `?refresh=true` 参数绕过缓存，强制重新生成
+- 前端 Refresh 按钮和 Retry 按钮均传 `?refresh=true`
+
+### 5.1.4 Action Items 优化
+
+- 去重改为双层：单条消息内按 `messageId:type` 去重 + 跨消息按 `type:sender:subject` 去重
+- description 更具体：带 subject 时格式为 `"{verb}: {subject} (from {sender})"`，无 subject 时为 `"{verb} with {sender}"`
+- 避免同一发件人同一主题重复刷出多条 action
+
+### 5.1.5 Attention Items 优化
+
+- 改为评分制：`HIGH +10`、`MEDIUM +5`、`unread +3`、`有关联 action item +2`
+- 过滤阈值 `score >= 3`：HIGH/MEDIUM 即使已读也保留，LOW 需 unread 或有 action
+- 排序按总分降序，不再只看 riskLevel
+- reason 文案区分 read/unread 状态
+
+### 5.1.6 AI Summary Prompt 收紧
+
+- 角色从"executive assistant summarize"改为"rewrite pre-extracted data"
+- 新增 6 条严格约束：禁止编造、推测、扩展事实
+- temperature 从 0.5 降到 0.3
+- 数据稀疏时要求写更短的 summary，不允许 padding
+
+### 5.1.7 改动文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/lib/services/summary-service.ts` | isToday 时区修正、attention 评分制、action 去重+具体化、AI prompt 收紧 |
+| `src/app/api/summary/route.ts` | globalThis 缓存层（3 分钟 TTL + refresh 参数）|
+| `src/components/dashboard/daily-brief-card.tsx` | Refresh/Retry 传 `?refresh=true` |
+
+### 5.1.8 验证
+
+- `next build` 通过（exit_code: 0）
+- Today 判断基于 `Australia/Sydney` 时区
+- 连续刷新 Dashboard 不再重复调 OpenAI（缓存命中）
+- 手动 Refresh 绕过缓存
+- Action items 不再重复，description 带具体 sender/subject
+- HIGH risk 已读消息仍出现在 attention
+- AI summary 不再编造未提供信息
+
+---
+
+## 阶段 6：Style Personalization V1
+
+**完成日期**: 2026-03-25
+
+### 6.1 产品目标
+
+让用户能够"自主选择"如何建立自己的写作风格，使 AI 生成的回复明显更个性化。设计参考了 WeClone-Skills 的 persona pack / runtime context / review gate 结构，原生实现到 Pollux 中。
+
+### 6.2 四条风格入口（Settings → Build Your Style）
+
+| # | 入口 | 说明 |
+|---|------|------|
+| 1 | Learn from Gmail Sent | 拉取最近 15 封已发送邮件，AI 分析提取风格（需要 Gmail 已连接）|
+| 2 | Upload Writing Samples | 上传 .txt / .md 文件 |
+| 3 | Paste Writing Samples | 直接粘贴文本，用 `---` 分隔多个样本 |
+| 4 | Start from a Preset | 4 个预设：Professional / Friendly / Concise / Assertive |
+
+### 6.3 冷启动策略
+
+| 样本数 | 策略 |
+|--------|------|
+| 0 | Preset only — 选一个预设即可开始 |
+| 1-3 | 轻量提取 — signoff/greeting/句子风格/语气 |
+| 4-9 | Few-shot — 注入 1-2 个匹配样本到 prompt |
+| 10+ | Heuristic retrieval — 按 provider/length 匹配 top 3 |
+
+### 6.4 类型扩展
+
+**`src/lib/types/index.ts`**:
+- `StyleCard` 新增可选字段：`greetingPatterns`, `directness`, `hedgeWords`
+- `StyleExample` 扩展：`sourceProvider` 改为 `string`（provider-agnostic），新增 `intent?`, `lengthBucket?`
+- 新增 `StyleSource` 类型：`"preset" | "gmail_sent" | "manual_samples" | "mixed"`
+- 新增 `UserStyleProfile` 接口：`styleCard`, `examples[]`, `guardrails[]`, `source`, `exampleCount`, `updatedAt`
+
+### 6.5 风格存储 — `src/lib/style/style-store.ts`
+
+- globalThis 模式（同 token-store），HMR 安全
+- `getUserStyleProfile(userId)` / `setUserStyleProfile(userId, profile)` / `removeUserStyleProfile(userId)`
+
+### 6.6 预设 — `src/lib/style/presets.ts`
+
+4 个预设 StyleCard（Professional / Friendly / Concise / Assertive），每个包含完整的 toneRules、bannedPhrases、signoffPatterns、greetingPatterns、directness、hedgeWords。
+
+### 6.7 AI 风格提取 — `src/lib/style/extract.ts`
+
+- `extractStyleFromSamples(texts, sourceProvider)` → `{ styleCard, examples }`
+- AI 路径：将样本发送给 GPT-4o-mini，提取结构化 StyleCard（persona、tone rules、banned phrases、greeting/signoff patterns 等）
+- 规则 fallback：无 OpenAI 时，分析 signoff 模式、sentence 长度、emoji 使用率、hedging 词频
+- 样本自动转换为 `StyleExample[]`，附加 `lengthBucket`
+
+### 6.8 Gmail 已发送邮件获取 — `src/lib/gmail/fetch-sent.ts`
+
+- `fetchGmailSentEmails(userId, maxResults)` → `string[]`
+- 使用 Gmail API `messages.list` with `labelIds: ['SENT']`
+- 复用现有 `createGmailClient` 和 `extractTextBody`
+
+### 6.9 API 路由
+
+**`GET /api/style`** — 获取当前用户风格 profile
+**`POST /api/style`** — 设置 preset 或更新 guardrails
+  - `{ action: "set_preset", presetId: "professional" }`
+  - `{ action: "update_guardrails", guardrails: [...] }`
+
+**`POST /api/style/learn`** — 触发风格学习
+  - `{ source: "gmail_sent" }` — 从 Gmail 已发送邮件学习
+  - `{ source: "manual_samples", texts: [...] }` — 从粘贴/上传文本学习
+
+### 6.10 增强的 Prompt — `src/lib/openai/generate.ts`
+
+- 接口从 `generateRepliesWithOpenAI(input, styleCard)` 改为 `generateRepliesWithOpenAI(input, ctx: EnhancedStyleContext)`
+- `EnhancedStyleContext` 包含：`styleCard`, `examples?`, `guardrails?`
+- Prompt 新增：
+  - "USER'S COMMUNICATION PROFILE" 区块（含 greetings、directness、hedgeWords）
+  - "AUTHOR'S WRITING EXAMPLES" 区块（few-shot 注入 top 3 匹配样本）
+  - "Guardrails" 区块（用户自定义边界）
+- 启发式样本选择 `selectExamples()`：按 provider 匹配 +2、length bucket 匹配 +1，取 top 3
+
+### 6.11 Reply Service 升级 — `src/lib/services/reply-service.ts`
+
+- `generateReplies(input, userId?)` — 新增可选 `userId` 参数
+- 自动从 `style-store` 加载用户风格 profile
+- 无用户风格时 fallback 到 `mockStyleCard`
+- 返回 `styleMeta`：`{ persona, source, exampleCount }`
+
+### 6.12 StyleBuilder UI — `src/components/settings/style-builder.tsx`
+
+- 加载时自动 fetch `/api/style` 检查现有 profile
+- 两个 tab：`choose`（选择来源）和 `preview`（预览当前风格）
+- 4 条入口卡片，Gmail 入口显示 "Recommended" 且未连接时 disabled
+- 粘贴入口支持展开 textarea，实时显示检测到的样本数
+- 上传入口支持多文件 .txt/.md
+- 预设入口显示 4 个快速选择按钮
+- Preview tab 显示完整 StyleCard（persona、tone、avoid、sign-offs、emoji/sentences/directness 三列指标）+ 代表性样本（最多 3 条）
+- "Change Style Source" 按钮允许重新选择
+
+### 6.13 Settings 页面集成
+
+- `src/components/settings/settings-panel.tsx`：移除旧的静态 "Communication Style" preview
+- 替换为 `<StyleBuilder gmailConnected={gmailConnected} />`
+- `src/app/api/reply/generate/route.ts`：传 `userId` 给 `generateReplies`
+
+### 6.14 WeClone-Skills 思想映射
+
+| WeClone 概念 | Pollux 实现 |
+|-------------|-------------|
+| persona pack | `UserStyleProfile.styleCard` — 长期风格 |
+| persona examples | `UserStyleProfile.examples` — 代表性历史样本 |
+| state | runtime context 中的 provider / 收件人信息 |
+| guardrails | `UserStyleProfile.guardrails` — 禁止短语/边界 |
+| runtime context | `GenerateInput`（当前邮件内容/provider/sender）|
+| review gate | 生成候选 → 用户编辑确认 → 手动发送 |
+
+### 6.15 改动文件清单
+
+| 文件 | 状态 |
+|------|------|
+| `src/lib/types/index.ts` | 修改 — 扩展 StyleCard/StyleExample，新增 UserStyleProfile |
+| `src/lib/style/presets.ts` | 新增 — 4 个预设 StyleCard |
+| `src/lib/style/style-store.ts` | 新增 — globalThis 风格存储 |
+| `src/lib/style/extract.ts` | 新增 — AI 风格提取 + 规则 fallback |
+| `src/lib/gmail/fetch-sent.ts` | 新增 — Gmail 已发送邮件获取 |
+| `src/app/api/style/route.ts` | 新增 — 风格 CRUD API |
+| `src/app/api/style/learn/route.ts` | 新增 — 风格学习 API |
+| `src/components/settings/style-builder.tsx` | 新增 — Build Your Style UI |
+| `src/lib/openai/generate.ts` | 修改 — 增强 prompt（examples + guardrails）|
+| `src/lib/services/reply-service.ts` | 修改 — 加载用户风格，传 userId |
+| `src/app/api/reply/generate/route.ts` | 修改 — 传 userId |
+| `src/components/settings/settings-panel.tsx` | 修改 — 集成 StyleBuilder |
+
+### 6.16 验证
+
+- `next build` 通过（exit_code: 0）
+- 4 条入口在 Settings 页面中清晰可见
+- Preset 选择即时生效，Preview 正确显示
+- Gmail Sent 学习（需已连接 Gmail）触发 AI 提取
+- 粘贴/上传样本触发 AI 风格分析
+- 回复生成使用用户个性化风格（日志中可见 persona/source/exampleCount）
 
 ---
 

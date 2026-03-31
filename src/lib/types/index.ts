@@ -27,13 +27,29 @@ export interface StyleCard {
   signoffPatterns: string[];
   emojiPreference: string;
   sentenceStyle: string;
+  greetingPatterns?: string[];
+  directness?: string;
+  hedgeWords?: string[];
 }
 
 export interface StyleExample {
   id: string;
   persona: string;
-  sourceProvider: Provider;
+  sourceProvider: string;
   text: string;
+  intent?: string;
+  lengthBucket?: "short" | "medium" | "long";
+}
+
+export type StyleSource = "preset" | "gmail_sent" | "manual_samples" | "mixed";
+
+export interface UserStyleProfile {
+  styleCard: StyleCard;
+  examples: StyleExample[];
+  guardrails: string[];
+  source: StyleSource;
+  exampleCount: number;
+  updatedAt: string;
 }
 
 export interface Attachment {
@@ -91,4 +107,44 @@ export interface SessionUser {
   name?: string;
   email?: string;
   picture?: string;
+}
+
+// --- Daily Brief / Summary ---
+
+export interface AttentionItem {
+  messageId: string;
+  provider: string;
+  sender: string;
+  subject?: string;
+  reason: string;
+  riskLevel: RiskLevel;
+}
+
+export interface ActionItem {
+  id: string;
+  type: string;
+  description: string;
+  sourceMessageId: string;
+  sourceProvider: string;
+  sender: string;
+  priority: "high" | "medium" | "low";
+}
+
+export interface ProviderCount {
+  provider: string;
+  total: number;
+  unread: number;
+}
+
+export interface DailyBrief {
+  headline: string;
+  summaryText: string;
+  totalToday: number;
+  totalAll: number;
+  periodLabel: string;
+  providerCounts: ProviderCount[];
+  attentionItems: AttentionItem[];
+  actionItems: ActionItem[];
+  generatedAt: string;
+  sourceMode: "rule_based" | "ai_generated" | "fallback";
 }

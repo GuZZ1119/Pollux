@@ -18,12 +18,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const { candidates, source } = await generateReplies({
-      content,
-      sender: sender ?? "Unknown",
-      subject,
-      provider: provider ?? "gmail",
-    });
+    const { candidates, source } = await generateReplies(
+      { content, sender: sender ?? "Unknown", subject, provider: provider ?? "gmail" },
+      userId,
+    );
 
     logEvent({
       eventType: "reply_generated",

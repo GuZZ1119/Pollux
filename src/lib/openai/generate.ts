@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { ReplyCandidate, StyleCard } from "@/lib/types";
+import type { ReplyCandidate, StyleCard, StyleExample } from "@/lib/types";
 
 let _client: OpenAI | null = null;
 
@@ -19,18 +19,42 @@ export interface GenerateInput {
   provider: string;
 }
 
+export interface EnhancedStyleContext {
+  styleCard: StyleCard;
+  examples?: StyleExample[];
+  guardrails?: string[];
+}
+
 export async function generateRepliesWithOpenAI(
   input: GenerateInput,
-  style: StyleCard
+  ctx: EnhancedStyleContext,
 ): Promise<ReplyCandidate[]> {
   const client = getClient();
+  const { styleCard, examples, guardrails } = ctx;
 
   const channelHint =
     input.provider === "slack"
       ? "This is a Slack message — replies should be concise and conversational."
       : "This is an email — replies should be appropriately structured.";
 
+  let examplesBlock = "";
+  if (examples && examples.length > 0) {
+    const selected = selectExamples(examples, input);
+    if (selected.length > 0) {
+      examplesBlock = `\n--- AUTHOR'S WRITING EXAMPLES (mimic this style closely) ---\n` +
+        selected.map((e, i) => `Example ${i + 1}:\n${e.text.slice(0, 500)}`).join("\n\n") +
+        `\n--- END EXAMPLES ---\n`;
+    }
+  }
+
+  let guardrailsBlock = "";
+  if (guardrails && guardrails.length > 0) {
+    guardrailsBlock = `\nGuardrails (strict boundaries — never violate):\n` +
+      guardrails.map((g) => `- ${g}`).join("\n") + "\n";
+  }
+
   const prompt = `You are a reply assistant. Draft 3 reply candidates for the message below.
+Your goal is to write replies that sound like the user wrote them, not like a generic AI.
 
 ${channelHint}
 
@@ -44,14 +68,18 @@ ${input.subject ? `Subject: ${input.subject}` : ""}
 ${input.content}
 --- END ORIGINAL MESSAGE ---
 
-Style rules to follow:
-- Persona: ${style.persona}
-- Tone: ${style.toneRules.join("; ")}
-- NEVER use these phrases: ${style.bannedPhrases.join(", ")}
-- Preferred sign-offs: ${style.signoffPatterns.join(", ")}
-- Emoji: ${style.emojiPreference}
-- Sentence style: ${style.sentenceStyle}
-
+--- USER'S COMMUNICATION PROFILE ---
+Persona: ${styleCard.persona}
+Tone: ${styleCard.toneRules.join("; ")}
+NEVER use these phrases: ${styleCard.bannedPhrases.join(", ") || "(none)"}
+Preferred sign-offs: ${styleCard.signoffPatterns.join(", ")}
+${styleCard.greetingPatterns?.length ? `Preferred greetings: ${styleCard.greetingPatterns.join(", ")}` : ""}
+Emoji: ${styleCard.emojiPreference}
+Sentence style: ${styleCard.sentenceStyle}
+${styleCard.directness ? `Directness: ${styleCard.directness}` : ""}
+${styleCard.hedgeWords?.length ? `Hedge words the user naturally uses: ${styleCard.hedgeWords.join(", ")}` : ""}
+--- END PROFILE ---
+${examplesBlock}${guardrailsBlock}
 Return EXACTLY a JSON array of 3 objects. Each object has:
   "text"        – the reply body (string)
   "explanation" – one-sentence rationale for this approach (string)
@@ -72,6 +100,28 @@ Return ONLY the JSON array — no markdown fences, no commentary.`;
 
   const raw = res.choices[0]?.message?.content?.trim() ?? "[]";
   return parseReplyCandidates(raw);
+}
+
+/**
+ * Heuristic example selection: pick the most relevant examples for the current context.
+ * No vector DB — uses length matching, provider matching, and recency.
+ */
+function selectExamples(examples: StyleExample[], input: GenerateInput): StyleExample[] {
+  if (examples.length <= 3) return examples;
+
+  const inputLen = input.content.split(/\s+/).length;
+  const inputBucket: StyleExample["lengthBucket"] =
+    inputLen < 50 ? "short" : inputLen < 150 ? "medium" : "long";
+
+  const scored = examples.map((ex) => {
+    let score = 0;
+    if (ex.sourceProvider === input.provider) score += 2;
+    if (ex.lengthBucket === inputBucket) score += 1;
+    return { ex, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 3).map((s) => s.ex);
 }
 
 function parseReplyCandidates(raw: string): ReplyCandidate[] {

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ConnectedAccount, AutomationLevel, SessionUser } from "@/lib/types";
 import { AccountStatusCard } from "./account-status-card";
-import { mockStyleCard } from "@/lib/mocks/style";
+import { StyleBuilder } from "./style-builder";
 import { UserAvatar } from "@/components/shared/user-avatar";
 
 interface Props {
@@ -105,55 +105,9 @@ export function SettingsPanel({ accounts, user }: Props) {
         </div>
       </section>
 
-      {/* Style Card Preview */}
+      {/* Style Personalization */}
       <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">Communication Style</h2>
-            <p className="text-sm text-gray-500 mt-0.5">Your AI replies follow these rules.</p>
-          </div>
-          <span className="text-[10px] uppercase tracking-wider font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full">
-            Preview
-          </span>
-        </div>
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <div className="bg-gray-50 px-5 py-3 border-b border-gray-200">
-            <p className="text-sm font-medium text-gray-700 capitalize">
-              Persona: {mockStyleCard.persona}
-            </p>
-          </div>
-          <div className="p-5 space-y-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Tone</p>
-              <div className="flex flex-wrap gap-1.5">
-                {mockStyleCard.toneRules.map((r, i) => (
-                  <span key={i} className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg">{r}</span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Avoid</p>
-              <div className="flex flex-wrap gap-1.5">
-                {mockStyleCard.bannedPhrases.map((p, i) => (
-                  <span key={i} className="text-xs bg-red-50 text-red-600 px-2.5 py-1 rounded-lg line-through decoration-red-300">{p}</span>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-gray-400 font-medium mb-1.5">Sign-offs</p>
-              <div className="flex flex-wrap gap-1.5">
-                {mockStyleCard.signoffPatterns.map((s, i) => (
-                  <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg">{s}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="bg-gray-50 px-5 py-3 border-t border-gray-200">
-            <p className="text-xs text-gray-400">
-              Full Style Card editor coming soon — customize tone, vocabulary, and sign-offs per persona.
-            </p>
-          </div>
-        </div>
+        <StyleBuilder gmailConnected={gmailConnected} />
       </section>
     </div>
   );
