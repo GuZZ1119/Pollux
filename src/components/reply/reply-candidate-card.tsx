@@ -11,41 +11,41 @@ export function ReplyCandidateCard({ candidate, index, isSelected, onSelect }: P
   return (
     <button
       onClick={onSelect}
-      className={`w-full text-left rounded-xl border-2 transition-all ${
+      className={`w-full text-left rounded-lg border transition-all ${
         isSelected
-          ? "border-blue-500 bg-blue-50/50 shadow-sm"
-          : "border-gray-200 hover:border-gray-300 bg-white"
+          ? "border-accent bg-accent-subtle shadow-xs"
+          : "border-border-light hover:border-border bg-surface"
       }`}
     >
       <div className="p-4">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-              isSelected ? "bg-blue-500 text-white" : "bg-gray-100 text-gray-500"
+            <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-bold ${
+              isSelected ? "bg-accent text-white" : "bg-subtle text-ink-tertiary"
             }`}>
               {index}
             </span>
-            <span className="text-xs text-gray-500">{candidate.explanation}</span>
+            <span className="text-[11px] text-ink-tertiary">{candidate.explanation}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-12 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div className="w-10 h-1 rounded-full bg-subtle overflow-hidden">
               <div
                 className={`h-full rounded-full ${
                   candidate.confidence >= 0.9
-                    ? "bg-green-400"
+                    ? "bg-positive"
                     : candidate.confidence >= 0.8
-                      ? "bg-yellow-400"
-                      : "bg-gray-300"
+                      ? "bg-caution"
+                      : "bg-ink-faint"
                 }`}
                 style={{ width: `${candidate.confidence * 100}%` }}
               />
             </div>
-            <span className="text-[10px] tabular-nums text-gray-400 w-7 text-right">
+            <span className="text-[10px] tabular-nums text-ink-faint w-6 text-right">
               {Math.round(candidate.confidence * 100)}%
             </span>
           </div>
         </div>
-        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed pl-8">
+        <p className="text-[13px] text-ink-secondary whitespace-pre-wrap leading-relaxed pl-7">
           {candidate.text}
         </p>
       </div>

@@ -8,7 +8,7 @@ interface Props {
 
 export function AppShell({ children, user }: Props) {
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-page">
       <Sidebar user={user} />
       <main className="flex-1 overflow-auto">{children}</main>
     </div>

@@ -10,7 +10,7 @@ interface Props {
 
 export function MessageList({ messages, selectedId, viewedIds, onSelect }: Props) {
   return (
-    <div className="divide-y divide-gray-100">
+    <div className="py-1">
       {messages.map((msg) => (
         <MessageListItem
           key={msg.id}

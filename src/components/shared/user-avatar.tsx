@@ -10,9 +10,9 @@ interface Props {
 }
 
 const sizeMap = {
-  sm: "w-8 h-8 text-xs",
-  md: "w-10 h-10 text-sm",
-  lg: "w-11 h-11 text-sm",
+  sm: "w-8 h-8 text-[11px]",
+  md: "w-9 h-9 text-xs",
+  lg: "w-10 h-10 text-sm",
 };
 
 function getInitials(name: string | null | undefined): string {
@@ -40,7 +40,7 @@ export function UserAvatar({ src, name, size = "md", className = "" }: Props) {
       <img
         src={src}
         alt=""
-        className={`${s} rounded-full object-cover ${className}`}
+        className={`${s} rounded-full object-cover shrink-0 ${className}`}
         onError={() => setFailed(true)}
         referrerPolicy="no-referrer"
       />
@@ -49,7 +49,7 @@ export function UserAvatar({ src, name, size = "md", className = "" }: Props) {
 
   return (
     <div
-      className={`${s} rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0 ${className}`}
+      className={`${s} rounded-full bg-accent-subtle text-accent flex items-center justify-center font-semibold shrink-0 ${className}`}
     >
       {initials}
     </div>

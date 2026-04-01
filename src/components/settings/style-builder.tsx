@@ -30,7 +30,7 @@ export function StyleBuilder({ gmailConnected }: Props) {
         setTab("preview");
       }
     } catch {
-      /* ignore — no profile yet */
+      /* no profile yet */
     } finally {
       setLoading(false);
     }
@@ -38,7 +38,6 @@ export function StyleBuilder({ gmailConnected }: Props) {
 
   useEffect(() => { fetchProfile(); }, [fetchProfile]);
 
-  // ----- Preset selection -----
   async function handlePreset(presetId: string) {
     setBusy("preset");
     setError(null);
@@ -59,7 +58,6 @@ export function StyleBuilder({ gmailConnected }: Props) {
     }
   }
 
-  // ----- Gmail learning -----
   async function handleGmailLearn() {
     setBusy("gmail_sent");
     setError(null);
@@ -80,7 +78,6 @@ export function StyleBuilder({ gmailConnected }: Props) {
     }
   }
 
-  // ----- Manual paste -----
   async function handlePasteSubmit() {
     if (!pasteText.trim()) return;
     setBusy("paste");
@@ -105,7 +102,6 @@ export function StyleBuilder({ gmailConnected }: Props) {
     }
   }
 
-  // ----- File upload -----
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -117,7 +113,7 @@ export function StyleBuilder({ gmailConnected }: Props) {
         const text = await file.text();
         if (text.trim()) texts.push(text);
       }
-      if (texts.length === 0) throw new Error("No readable text found in uploaded files");
+      if (texts.length === 0) throw new Error("No readable text found");
 
       const res = await fetch("/api/style/learn", {
         method: "POST",
@@ -136,7 +132,6 @@ export function StyleBuilder({ gmailConnected }: Props) {
     }
   }
 
-  // ----- Reset -----
   function handleReset() {
     setProfile(null);
     setTab("choose");
@@ -146,12 +141,12 @@ export function StyleBuilder({ gmailConnected }: Props) {
 
   if (loading) {
     return (
-      <div className="border border-gray-200 rounded-xl p-6">
+      <div className="border border-border rounded-xl bg-surface p-6">
         <div className="animate-pulse space-y-3">
-          <div className="h-5 bg-gray-100 rounded w-40" />
-          <div className="h-3 bg-gray-100 rounded w-64" />
-          <div className="grid grid-cols-2 gap-3 mt-4">
-            {[1, 2, 3, 4].map((n) => <div key={n} className="h-20 bg-gray-50 rounded-xl" />)}
+          <div className="h-4 bg-subtle rounded w-36" />
+          <div className="h-3 bg-page rounded w-56" />
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            {[1, 2, 3, 4].map((n) => <div key={n} className="h-16 bg-page rounded-lg" />)}
           </div>
         </div>
       </div>
@@ -159,25 +154,28 @@ export function StyleBuilder({ gmailConnected }: Props) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
+    <div className="border border-border rounded-xl bg-surface overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-5 py-4 border-b border-border-light flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <span className="text-lg">✨</span> Build Your Style
+          <h2 className="text-[13px] font-medium text-ink flex items-center gap-1.5">
+            <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+            </svg>
+            Writing Style
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            {profile ? "Your personalized style is active." : "Choose how to teach Pollux your writing style."}
+          <p className="text-[12px] text-ink-tertiary mt-0.5">
+            {profile ? "Your personalized style is active." : "Teach Pollux how you write."}
           </p>
         </div>
         {profile && (
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
+            <span className="text-[10px] font-medium text-positive bg-positive-subtle px-2 py-0.5 rounded-md">
               Active
             </span>
             <button
               onClick={handleReset}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+              className="text-[11px] text-ink-faint hover:text-danger transition-colors"
             >
               Reset
             </button>
@@ -186,220 +184,219 @@ export function StyleBuilder({ gmailConnected }: Props) {
       </div>
 
       {error && (
-        <div className="mx-5 mt-4 px-4 py-3 bg-red-50 border border-red-100 rounded-lg">
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="mx-5 mt-4 px-3 py-2.5 bg-danger-subtle border border-danger/10 rounded-lg">
+          <p className="text-[12px] text-danger">{error}</p>
         </div>
       )}
 
-      {/* Tab: choose source */}
+      {/* Choose source */}
       {tab === "choose" && (
-        <div className="p-5 space-y-5">
-          {/* 4 onboarding paths */}
-          <div className="grid grid-cols-1 gap-3">
-            {/* Path 1: Gmail Sent */}
-            <button
-              disabled={!gmailConnected || busy !== null}
-              onClick={handleGmailLearn}
-              className={`flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                gmailConnected
-                  ? "border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer"
-                  : "border-gray-100 bg-gray-50/50 cursor-not-allowed opacity-60"
-              }`}
-            >
-              <span className="text-2xl mt-0.5">{busy === "gmail_sent" ? "⏳" : "📧"}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">
-                  Learn from Gmail Sent
-                  {busy === "gmail_sent" && <span className="text-xs font-normal text-blue-500 ml-2">Analyzing...</span>}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {gmailConnected
-                    ? "Analyze your recent sent emails to extract your natural writing style."
-                    : "Connect Gmail first to use this option."}
-                </p>
-              </div>
-              {gmailConnected && (
-                <span className="text-[10px] uppercase tracking-wider text-green-600 bg-green-50 px-2 py-0.5 rounded-full mt-1 shrink-0">
-                  Recommended
-                </span>
-              )}
-            </button>
-
-            {/* Path 2: Upload files */}
-            <button
-              disabled={busy !== null}
-              onClick={() => fileRef.current?.click()}
-              className="flex items-start gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50/30 text-left transition-all"
-            >
-              <span className="text-2xl mt-0.5">{busy === "upload" ? "⏳" : "📎"}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">
-                  Upload Writing Samples
-                  {busy === "upload" && <span className="text-xs font-normal text-blue-500 ml-2">Processing...</span>}
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Upload .txt or .md files of your previous emails or writing.
-                </p>
-              </div>
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".txt,.md,.text"
-              multiple
-              className="hidden"
-              onChange={handleFileUpload}
-            />
-
-            {/* Path 3: Paste text */}
-            <button
-              disabled={busy !== null}
-              onClick={() => setShowPaste(!showPaste)}
-              className={`flex items-start gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                showPaste ? "border-blue-400 bg-blue-50/30" : "border-gray-200 hover:border-blue-300 hover:bg-blue-50/30"
-              }`}
-            >
-              <span className="text-2xl mt-0.5">📝</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">Paste Writing Samples</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Paste your emails or messages directly. Separate multiple samples with &ldquo;---&rdquo;.
-                </p>
-              </div>
-            </button>
-
-            {showPaste && (
-              <div className="ml-12 space-y-3">
-                <textarea
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                  placeholder={"Paste your writing samples here...\n\nSeparate multiple samples with a line of ---\n\n---\n\nSecond sample here..."}
-                  rows={6}
-                  className="w-full text-sm border border-gray-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-transparent resize-none placeholder:text-gray-300"
-                />
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={handlePasteSubmit}
-                    disabled={!pasteText.trim() || busy !== null}
-                    className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {busy === "paste" ? "Analyzing..." : "Analyze Style"}
-                  </button>
-                  <span className="text-xs text-gray-400">
-                    {pasteText.split(/\n---\n/).filter((t) => t.trim()).length} sample(s) detected
-                  </span>
-                </div>
-              </div>
+        <div className="p-5 space-y-3">
+          {/* Gmail Sent */}
+          <button
+            disabled={!gmailConnected || busy !== null}
+            onClick={handleGmailLearn}
+            className={`w-full flex items-start gap-3 p-3.5 rounded-lg border text-left transition-all ${
+              gmailConnected
+                ? "border-border hover:border-accent/30 hover:bg-accent-subtle/30 cursor-pointer"
+                : "border-border-light bg-page cursor-not-allowed opacity-50"
+            }`}
+          >
+            <div className="w-8 h-8 rounded-lg bg-accent-subtle flex items-center justify-center shrink-0 mt-0.5">
+              <svg className="w-4 h-4 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0l-9.75 6.093L2.25 6.75" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-ink">
+                Learn from Gmail Sent
+                {busy === "gmail_sent" && <span className="text-[11px] font-normal text-accent ml-2">Analyzing…</span>}
+              </p>
+              <p className="text-[11px] text-ink-tertiary mt-0.5">
+                {gmailConnected ? "Analyze your recent sent emails." : "Connect Gmail first."}
+              </p>
+            </div>
+            {gmailConnected && (
+              <span className="text-[10px] font-medium text-positive bg-positive-subtle px-1.5 py-0.5 rounded shrink-0 mt-1">
+                Recommended
+              </span>
             )}
+          </button>
 
-            {/* Path 4: Presets */}
-            <div className="border-2 border-gray-200 rounded-xl p-4">
-              <div className="flex items-start gap-4 mb-3">
-                <span className="text-2xl mt-0.5">🎯</span>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Start from a Preset</p>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Pick a base style to get started immediately. You can refine later.
-                  </p>
-                </div>
+          {/* Upload */}
+          <button
+            disabled={busy !== null}
+            onClick={() => fileRef.current?.click()}
+            className="w-full flex items-start gap-3 p-3.5 rounded-lg border border-border hover:border-accent/30 hover:bg-accent-subtle/30 text-left transition-all"
+          >
+            <div className="w-8 h-8 rounded-lg bg-subtle flex items-center justify-center shrink-0 mt-0.5">
+              <svg className="w-4 h-4 text-ink-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-ink">
+                Upload Samples
+                {busy === "upload" && <span className="text-[11px] font-normal text-accent ml-2">Processing…</span>}
+              </p>
+              <p className="text-[11px] text-ink-tertiary mt-0.5">Upload .txt or .md files.</p>
+            </div>
+          </button>
+          <input ref={fileRef} type="file" accept=".txt,.md,.text" multiple className="hidden" onChange={handleFileUpload} />
+
+          {/* Paste */}
+          <button
+            disabled={busy !== null}
+            onClick={() => setShowPaste(!showPaste)}
+            className={`w-full flex items-start gap-3 p-3.5 rounded-lg border text-left transition-all ${
+              showPaste ? "border-accent bg-accent-subtle/30" : "border-border hover:border-accent/30 hover:bg-accent-subtle/30"
+            }`}
+          >
+            <div className="w-8 h-8 rounded-lg bg-subtle flex items-center justify-center shrink-0 mt-0.5">
+              <svg className="w-4 h-4 text-ink-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-medium text-ink">Paste Samples</p>
+              <p className="text-[11px] text-ink-tertiary mt-0.5">
+                Paste text directly. Separate with &ldquo;---&rdquo;.
+              </p>
+            </div>
+          </button>
+
+          {showPaste && (
+            <div className="ml-11 space-y-2.5">
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder={"Paste your writing samples here…\n\nSeparate with ---"}
+                rows={5}
+                className="w-full text-[13px] border border-border rounded-lg p-3 focus:border-accent focus:shadow-focus outline-none resize-none bg-surface placeholder:text-ink-faint"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePasteSubmit}
+                  disabled={!pasteText.trim() || busy !== null}
+                  className="px-4 py-2 bg-accent text-white text-[12px] font-medium rounded-lg hover:bg-accent-hover disabled:opacity-40 transition-colors"
+                >
+                  {busy === "paste" ? "Analyzing…" : "Analyze"}
+                </button>
+                <span className="text-[11px] text-ink-faint">
+                  {pasteText.split(/\n---\n/).filter((t) => t.trim()).length} sample(s)
+                </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 ml-12">
-                {PRESET_META.map((p) => (
-                  <button
-                    key={p.id}
-                    disabled={busy !== null}
-                    onClick={() => handlePreset(p.id)}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50/40 text-left transition-all disabled:opacity-40"
-                  >
-                    <span>{p.icon}</span>
-                    <div>
-                      <p className="text-xs font-semibold text-gray-900">{p.label}</p>
-                      <p className="text-[10px] text-gray-400 leading-tight">{p.desc}</p>
-                    </div>
-                  </button>
-                ))}
+            </div>
+          )}
+
+          {/* Presets */}
+          <div className="border border-border rounded-lg p-3.5">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-subtle flex items-center justify-center shrink-0">
+                <svg className="w-4 h-4 text-ink-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.6}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                </svg>
               </div>
+              <div>
+                <p className="text-[13px] font-medium text-ink">Start from a Preset</p>
+                <p className="text-[11px] text-ink-tertiary mt-0.5">Pick a base style and refine later.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 ml-11">
+              {PRESET_META.map((p) => (
+                <button
+                  key={p.id}
+                  disabled={busy !== null}
+                  onClick={() => handlePreset(p.id)}
+                  className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-border-light hover:border-accent/30 hover:bg-accent-subtle/30 text-left transition-all disabled:opacity-40"
+                >
+                  <span className="text-base">{p.icon}</span>
+                  <div>
+                    <p className="text-[12px] font-medium text-ink">{p.label}</p>
+                    <p className="text-[10px] text-ink-faint leading-tight">{p.desc}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab: preview active style */}
+      {/* Preview */}
       {tab === "preview" && profile && (
         <div className="p-5 space-y-4">
-          {/* Source badge */}
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Source:</span>
-            <span className="bg-gray-100 px-2 py-0.5 rounded-full font-medium capitalize">
+          {/* Source info */}
+          <div className="flex items-center gap-2 text-[11px] text-ink-tertiary">
+            <span className="bg-subtle px-2 py-0.5 rounded font-medium capitalize">
               {profile.source.replace("_", " ")}
             </span>
-            <span className="text-gray-300">|</span>
-            <span>{profile.exampleCount} example(s)</span>
-            <span className="text-gray-300">|</span>
+            <span className="text-ink-faint">·</span>
+            <span>{profile.exampleCount} examples</span>
+            <span className="text-ink-faint">·</span>
             <span>Updated {new Date(profile.updatedAt).toLocaleDateString()}</span>
           </div>
 
-          {/* StyleCard preview */}
+          {/* Style details */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0">Persona</span>
-              <span className="text-sm font-semibold text-gray-900 capitalize">{profile.styleCard.persona}</span>
+              <span className="text-[11px] font-medium text-ink-tertiary tracking-wide uppercase w-20 shrink-0">Persona</span>
+              <span className="text-[13px] font-medium text-ink capitalize">{profile.styleCard.persona}</span>
             </div>
 
             <div className="flex items-start gap-2">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0 pt-1">Tone</span>
-              <div className="flex flex-wrap gap-1.5">
+              <span className="text-[11px] font-medium text-ink-tertiary tracking-wide uppercase w-20 shrink-0 pt-0.5">Tone</span>
+              <div className="flex flex-wrap gap-1">
                 {profile.styleCard.toneRules.map((r, i) => (
-                  <span key={i} className="text-xs bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg">{r}</span>
+                  <span key={i} className="text-[11px] bg-accent-subtle text-accent px-2 py-0.5 rounded">{r}</span>
                 ))}
               </div>
             </div>
 
             {profile.styleCard.bannedPhrases.length > 0 && (
               <div className="flex items-start gap-2">
-                <span className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0 pt-1">Avoid</span>
-                <div className="flex flex-wrap gap-1.5">
+                <span className="text-[11px] font-medium text-ink-tertiary tracking-wide uppercase w-20 shrink-0 pt-0.5">Avoid</span>
+                <div className="flex flex-wrap gap-1">
                   {profile.styleCard.bannedPhrases.map((p, i) => (
-                    <span key={i} className="text-xs bg-red-50 text-red-600 px-2.5 py-1 rounded-lg line-through decoration-red-300">{p}</span>
+                    <span key={i} className="text-[11px] bg-danger-subtle text-danger px-2 py-0.5 rounded line-through">{p}</span>
                   ))}
                 </div>
               </div>
             )}
 
             <div className="flex items-start gap-2">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wider w-20 shrink-0 pt-1">Sign-offs</span>
-              <div className="flex flex-wrap gap-1.5">
+              <span className="text-[11px] font-medium text-ink-tertiary tracking-wide uppercase w-20 shrink-0 pt-0.5">Sign-offs</span>
+              <div className="flex flex-wrap gap-1">
                 {profile.styleCard.signoffPatterns.map((s, i) => (
-                  <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-lg">{s}</span>
+                  <span key={i} className="text-[11px] bg-subtle text-ink-secondary px-2 py-0.5 rounded">{s}</span>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 pt-1">
-              <div className="text-center p-2 bg-gray-50 rounded-lg">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Emoji</p>
-                <p className="text-xs font-medium text-gray-700 mt-0.5 capitalize">{profile.styleCard.emojiPreference}</p>
+            <div className="grid grid-cols-3 gap-2 pt-1">
+              <div className="text-center p-2 bg-page rounded-lg">
+                <p className="text-[10px] text-ink-faint uppercase tracking-wide">Emoji</p>
+                <p className="text-[12px] font-medium text-ink mt-0.5 capitalize">{profile.styleCard.emojiPreference}</p>
               </div>
-              <div className="text-center p-2 bg-gray-50 rounded-lg">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Sentences</p>
-                <p className="text-xs font-medium text-gray-700 mt-0.5 capitalize">{profile.styleCard.sentenceStyle}</p>
+              <div className="text-center p-2 bg-page rounded-lg">
+                <p className="text-[10px] text-ink-faint uppercase tracking-wide">Sentences</p>
+                <p className="text-[12px] font-medium text-ink mt-0.5 capitalize">{profile.styleCard.sentenceStyle}</p>
               </div>
-              <div className="text-center p-2 bg-gray-50 rounded-lg">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider">Directness</p>
-                <p className="text-xs font-medium text-gray-700 mt-0.5 capitalize">{profile.styleCard.directness ?? "balanced"}</p>
+              <div className="text-center p-2 bg-page rounded-lg">
+                <p className="text-[10px] text-ink-faint uppercase tracking-wide">Directness</p>
+                <p className="text-[12px] font-medium text-ink mt-0.5 capitalize">{profile.styleCard.directness ?? "balanced"}</p>
               </div>
             </div>
           </div>
 
-          {/* Representative examples */}
+          {/* Examples */}
           {profile.examples.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
-                Representative Examples ({Math.min(profile.examples.length, 3)} of {profile.examples.length})
+              <p className="text-[11px] font-medium text-ink-tertiary tracking-wide uppercase mb-2">
+                Examples ({Math.min(profile.examples.length, 3)} of {profile.examples.length})
               </p>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {profile.examples.slice(0, 3).map((ex) => (
-                  <div key={ex.id} className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-lg p-3 leading-relaxed">
+                  <div key={ex.id} className="text-[12px] text-ink-secondary bg-page border border-border-light rounded-lg p-3 leading-relaxed">
                     {ex.text.length > 200 ? ex.text.slice(0, 200) + "…" : ex.text}
                   </div>
                 ))}
@@ -408,12 +405,12 @@ export function StyleBuilder({ gmailConnected }: Props) {
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-3 pt-2">
+          <div className="pt-1">
             <button
               onClick={handleReset}
-              className="px-4 py-2 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="px-3.5 py-2 text-[12px] font-medium text-ink-secondary bg-subtle rounded-lg hover:bg-border transition-colors"
             >
-              Change Style Source
+              Change source
             </button>
           </div>
         </div>

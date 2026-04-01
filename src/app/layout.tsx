@@ -5,11 +5,14 @@ import { AppShell } from "@/components/layout/app-shell";
 import { auth0 } from "@/lib/auth0";
 import type { SessionUser } from "@/lib/types";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Pollux — AI Communication Layer",
-  description: "Permissioned AI communication layer for Gmail and Slack",
+  title: "Pollux — AI Communication Copilot",
+  description: "AI-powered communication layer for Gmail and Slack",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

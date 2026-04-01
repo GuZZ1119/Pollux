@@ -12,9 +12,9 @@ interface Props {
 }
 
 const automationOptions: { value: AutomationLevel; label: string; desc: string }[] = [
-  { value: "DRAFT_ONLY", label: "Draft Only", desc: "AI generates drafts, you review and send manually" },
-  { value: "ONE_CLICK", label: "One-Click Send", desc: "AI generates replies, you approve with one click" },
-  { value: "AUTO_ALLOWLIST", label: "Auto (Allowlist)", desc: "Auto-send for low-risk contacts on your allowlist" },
+  { value: "DRAFT_ONLY", label: "Draft Only", desc: "AI generates drafts — you review and send" },
+  { value: "ONE_CLICK", label: "One-Click Send", desc: "AI generates replies — approve with one click" },
+  { value: "AUTO_ALLOWLIST", label: "Auto (Allowlist)", desc: "Auto-send for trusted contacts" },
 ];
 
 export function SettingsPanel({ accounts, user }: Props) {
@@ -26,30 +26,30 @@ export function SettingsPanel({ accounts, user }: Props) {
   return (
     <div className="space-y-8">
       {/* Account */}
-      <section className="border border-gray-200 rounded-xl p-5">
-        <h2 className="text-base font-semibold text-gray-900 mb-4">Account</h2>
+      <section className="border border-border rounded-xl bg-surface p-5">
+        <h2 className="text-[13px] font-medium text-ink mb-4">Account</h2>
         {user ? (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <UserAvatar src={user.picture} name={user.name} size="lg" className="ring-2 ring-gray-100" />
+              <UserAvatar src={user.picture} name={user.name} size="lg" />
               <div>
-                <p className="text-sm font-medium text-gray-900">{user.name ?? "User"}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="text-[13px] font-medium text-ink">{user.name ?? "User"}</p>
+                <p className="text-[12px] text-ink-tertiary">{user.email}</p>
               </div>
             </div>
             <a
               href="/auth/logout"
-              className="text-xs text-gray-400 hover:text-red-600 transition-colors"
+              className="text-[12px] text-ink-faint hover:text-danger transition-colors"
             >
               Sign out
             </a>
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-gray-500">Not signed in</p>
+            <p className="text-[13px] text-ink-tertiary">Not signed in</p>
             <a
               href="/auth/login"
-              className="px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700"
+              className="px-4 py-2 bg-accent text-white text-[12px] font-medium rounded-lg hover:bg-accent-hover transition-colors"
             >
               Sign in
             </a>
@@ -59,13 +59,13 @@ export function SettingsPanel({ accounts, user }: Props) {
 
       {/* Integrations */}
       <section>
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Integrations</h2>
-        <p className="text-sm text-gray-500 mb-4">
+        <h2 className="text-[13px] font-medium text-ink mb-1">Integrations</h2>
+        <p className="text-[12px] text-ink-tertiary mb-4">
           {gmailConnected
-            ? "Gmail is connected and syncing your inbox."
-            : "Connect Gmail to use Pollux with your real emails."}
+            ? "Gmail is connected and syncing."
+            : "Connect Gmail or Slack to use Pollux."}
         </p>
-        <div className="space-y-3">
+        <div className="space-y-2">
           {accounts.map((acc) => (
             <AccountStatusCard key={acc.id} account={acc} />
           ))}
@@ -74,18 +74,18 @@ export function SettingsPanel({ accounts, user }: Props) {
 
       {/* Automation */}
       <section>
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Automation Level</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Control how Pollux handles reply generation and sending.
+        <h2 className="text-[13px] font-medium text-ink mb-1">Automation</h2>
+        <p className="text-[12px] text-ink-tertiary mb-4">
+          How Pollux handles reply generation and sending.
         </p>
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {automationOptions.map((opt) => (
             <label
               key={opt.value}
-              className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+              className={`flex items-start gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${
                 level === opt.value
-                  ? "border-blue-500 bg-blue-50/50"
-                  : "border-gray-200 hover:border-gray-300"
+                  ? "border-accent bg-accent-subtle"
+                  : "border-border hover:border-border bg-surface"
               }`}
             >
               <input
@@ -94,18 +94,18 @@ export function SettingsPanel({ accounts, user }: Props) {
                 value={opt.value}
                 checked={level === opt.value}
                 onChange={() => setLevel(opt.value)}
-                className="mt-0.5 accent-blue-600"
+                className="mt-0.5 accent-accent"
               />
               <div>
-                <p className="text-sm font-medium text-gray-900">{opt.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{opt.desc}</p>
+                <p className="text-[13px] font-medium text-ink">{opt.label}</p>
+                <p className="text-[11px] text-ink-tertiary mt-0.5">{opt.desc}</p>
               </div>
             </label>
           ))}
         </div>
       </section>
 
-      {/* Style Personalization */}
+      {/* Style */}
       <section>
         <StyleBuilder gmailConnected={gmailConnected} />
       </section>

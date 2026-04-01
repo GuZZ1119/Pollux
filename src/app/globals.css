@@ -1,1 +1,73 @@
 @import "tailwindcss";
+
+@theme {
+  --color-page: #F7F7FA;
+  --color-surface: #FFFFFF;
+  --color-subtle: #F2F2F5;
+  --color-border: #E8E8ED;
+  --color-border-light: #F0F0F4;
+  --color-ink: #1A1A1F;
+  --color-ink-secondary: #6B6B74;
+  --color-ink-tertiary: #9B9BA4;
+  --color-ink-faint: #C5C5CC;
+  --color-accent: #4A4FC4;
+  --color-accent-hover: #3E43B0;
+  --color-accent-subtle: #EEEEF8;
+  --color-accent-muted: #B8BAE0;
+  --color-positive: #2DA44E;
+  --color-positive-subtle: #EFF8F1;
+  --color-caution: #D4820C;
+  --color-caution-subtle: #FFF8ED;
+  --color-danger: #CF222E;
+  --color-danger-subtle: #FFF1F0;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-focus: 0 0 0 3px rgba(74, 79, 196, 0.15);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--color-page);
+  color: var(--color-ink);
+}
+
+::selection {
+  background-color: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: 6px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-radius: inherit;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 3px;
+}

@@ -9,16 +9,19 @@ export default async function Home() {
   }
 
   return (
-    <div className="flex-1 flex items-center justify-center min-h-screen -ml-56">
+    <div className="flex-1 flex items-center justify-center min-h-screen -ml-[220px]">
       <div className="text-center max-w-md px-6">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Pollux</h1>
-        <p className="text-lg text-gray-500 mb-8">
-          AI-powered communication layer for Gmail and Slack.
+        <div className="w-12 h-12 mx-auto mb-6 rounded-xl bg-accent flex items-center justify-center">
+          <span className="text-white text-lg font-bold">P</span>
+        </div>
+        <h1 className="text-2xl font-semibold text-ink tracking-tight mb-2">Pollux</h1>
+        <p className="text-[15px] text-ink-secondary leading-relaxed mb-8">
+          AI communication copilot for Gmail and Slack.
           Draft smarter replies, send with confidence.
         </p>
         <a
           href="/auth/login"
-          className="inline-block px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          className="inline-block px-6 py-2.5 bg-accent text-white text-[14px] font-medium rounded-lg hover:bg-accent-hover transition-colors"
         >
           Get Started
         </a>
