@@ -17,6 +17,16 @@ model GmailToken {
   updatedAt    DateTime @updatedAt
 }
 
+model SlackToken {
+  userId    String   @id
+  botToken  String
+  teamId    String
+  teamName  String?
+  botUserId String?
+  scope     String   @default("")
+  updatedAt DateTime @updatedAt
+}
+
 model StyleProfile {
   userId    String   @id
   data      Json

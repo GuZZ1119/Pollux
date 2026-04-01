@@ -37,6 +37,7 @@ export default async function DashboardPage() {
 
   const accounts = await getConnectedAccounts(user.sub);
   const gmailConnected = accounts.some((a) => a.provider === "gmail" && a.status === "CONNECTED");
+  const slackConnected = accounts.some((a) => a.provider === "slack" && a.status === "CONNECTED");
 
   const now = new Date();
   const greeting =
@@ -106,10 +107,12 @@ export default async function DashboardPage() {
           </div>
           <div className="flex items-center justify-between py-1">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className={`w-2 h-2 rounded-full ${slackConnected ? "bg-green-400" : "bg-gray-300"}`} />
               <span className="text-gray-600">Slack</span>
             </div>
-            <span className="text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded">coming soon</span>
+            <span className={`text-xs font-medium ${slackConnected ? "text-green-600" : "text-gray-400"}`}>
+              {slackConnected ? "Connected" : "Not connected"}
+            </span>
           </div>
           <div className="flex items-center justify-between py-1">
             <div className="flex items-center gap-2">
@@ -119,14 +122,18 @@ export default async function DashboardPage() {
             <span className="text-[11px] text-gray-400 bg-gray-100 px-2 py-0.5 rounded">planned</span>
           </div>
         </div>
-        {!gmailConnected && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <a
-              href="/api/auth/gmail/connect"
-              className="text-xs font-medium text-blue-600 hover:text-blue-800"
-            >
-              Connect Gmail to see your Daily Brief →
-            </a>
+        {(!gmailConnected || !slackConnected) && (
+          <div className="mt-3 pt-3 border-t border-gray-100 flex flex-col gap-1">
+            {!gmailConnected && (
+              <a href="/api/auth/gmail/connect" className="text-xs font-medium text-blue-600 hover:text-blue-800">
+                Connect Gmail to see your Daily Brief →
+              </a>
+            )}
+            {!slackConnected && (
+              <a href="/api/auth/slack/connect" className="text-xs font-medium text-purple-600 hover:text-purple-800">
+                Connect Slack for team messages →
+              </a>
+            )}
           </div>
         )}
       </div>

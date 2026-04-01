@@ -1,7 +1,9 @@
 import type { MessageItem, InboxFetchOptions } from "@/lib/types";
-import { MockSlackInboxAdapter, type InboxAdapter } from "@/lib/adapters/inbox";
+import { type InboxAdapter } from "@/lib/adapters/inbox";
 import { GmailInboxAdapter } from "@/lib/adapters/gmail-inbox";
+import { SlackInboxAdapter } from "@/lib/adapters/slack-inbox";
 import { hasGmailConnection, ensureTokensLoaded } from "@/lib/gmail/token-store";
+import { hasSlackConnection, ensureSlackTokensLoaded } from "@/lib/slack/token-store";
 import { INBOX_MAX_RESULTS } from "@/lib/config";
 import { logEvent } from "@/lib/services/event-log";
 
@@ -9,7 +11,10 @@ export async function getAggregatedInbox(
   userId?: string,
   options?: InboxFetchOptions,
 ): Promise<MessageItem[]> {
-  if (userId) await ensureTokensLoaded();
+  if (userId) {
+    await ensureTokensLoaded();
+    await ensureSlackTokensLoaded();
+  }
 
   const adapters: InboxAdapter[] = [];
 
@@ -17,7 +22,9 @@ export async function getAggregatedInbox(
     adapters.push(new GmailInboxAdapter(userId));
   }
 
-  adapters.push(new MockSlackInboxAdapter());
+  if (userId && hasSlackConnection(userId)) {
+    adapters.push(new SlackInboxAdapter(userId));
+  }
 
   const settled = await Promise.allSettled(
     adapters.map((a) => a.fetchMessages(options)),

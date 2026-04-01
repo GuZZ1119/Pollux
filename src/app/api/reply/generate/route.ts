@@ -3,7 +3,9 @@ import { auth0 } from "@/lib/auth0";
 import { generateReplies } from "@/lib/services/reply-service";
 import { logEvent } from "@/lib/services/event-log";
 import { ensureTokensLoaded, hasGmailConnection } from "@/lib/gmail/token-store";
+import { ensureSlackTokensLoaded, hasSlackConnection } from "@/lib/slack/token-store";
 import { fetchMessageById } from "@/lib/gmail/message-fetcher";
+import { fetchSlackMessageById } from "@/lib/slack/message-fetcher";
 
 export async function POST(request: Request) {
   try {
@@ -11,7 +13,13 @@ export async function POST(request: Request) {
     const userId = session?.user.sub ?? "anonymous";
 
     const body = await request.json();
-    const { messageId, content: fallbackContent, sender: fallbackSender, subject: fallbackSubject, provider: fallbackProvider } = body;
+    const {
+      messageId,
+      content: fallbackContent,
+      sender: fallbackSender,
+      subject: fallbackSubject,
+      provider: fallbackProvider,
+    } = body;
 
     if (!messageId) {
       return NextResponse.json(
@@ -35,7 +43,20 @@ export async function POST(request: Request) {
           subject = msg.subject;
           provider = msg.provider;
         } catch (e) {
-          console.warn("[reply/generate] Backend fetch failed, using frontend data:", e);
+          console.warn("[reply/generate] Gmail backend fetch failed, using frontend data:", e);
+        }
+      }
+    } else if (userId !== "anonymous" && messageId.startsWith("slack-")) {
+      await ensureSlackTokensLoaded();
+      if (hasSlackConnection(userId)) {
+        try {
+          const msg = await fetchSlackMessageById(userId, messageId);
+          content = msg.content;
+          sender = msg.sender;
+          subject = msg.subject;
+          provider = msg.provider;
+        } catch (e) {
+          console.warn("[reply/generate] Slack backend fetch failed, using frontend data:", e);
         }
       }
     }

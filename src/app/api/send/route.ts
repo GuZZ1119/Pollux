@@ -3,7 +3,9 @@ import { auth0 } from "@/lib/auth0";
 import { sendReply } from "@/lib/services/send-service";
 import { logEvent } from "@/lib/services/event-log";
 import { ensureTokensLoaded, hasGmailConnection } from "@/lib/gmail/token-store";
+import { ensureSlackTokensLoaded, hasSlackConnection } from "@/lib/slack/token-store";
 import { fetchMessageById } from "@/lib/gmail/message-fetcher";
+import { fetchSlackMessageById } from "@/lib/slack/message-fetcher";
 import { getUserStyleProfile } from "@/lib/style/style-store";
 
 export async function POST(request: Request) {
@@ -33,6 +35,7 @@ export async function POST(request: Request) {
     let threadId = fallbackThreadId;
     let sender = fallbackSender;
     let subject = fallbackSubject;
+    let slackChannelId: string | undefined;
 
     if (userId && messageId.startsWith("gmail-")) {
       await ensureTokensLoaded();
@@ -44,7 +47,21 @@ export async function POST(request: Request) {
           sender = msg.sender;
           subject = msg.subject;
         } catch (e) {
-          console.warn("[send] Backend fetch failed, using frontend data:", e);
+          console.warn("[send] Gmail backend fetch failed, using frontend data:", e);
+        }
+      }
+    } else if (userId && messageId.startsWith("slack-")) {
+      await ensureSlackTokensLoaded();
+      if (hasSlackConnection(userId)) {
+        try {
+          const msg = await fetchSlackMessageById(userId, messageId);
+          provider = msg.provider;
+          threadId = `${msg.channelId}-${msg.threadTs}`;
+          sender = msg.sender;
+          subject = msg.subject;
+          slackChannelId = msg.channelId;
+        } catch (e) {
+          console.warn("[send] Slack backend fetch failed, using frontend data:", e);
         }
       }
     }
@@ -62,6 +79,7 @@ export async function POST(request: Request) {
       candidateText,
       styleSource: styleProfile?.source,
       stylePersona: styleProfile?.styleCard.persona,
+      slackChannelId,
     });
 
     logEvent({

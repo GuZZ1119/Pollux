@@ -3,11 +3,16 @@ import { auth0 } from "@/lib/auth0";
 import { exchangeCodeForTokens } from "@/lib/gmail/oauth";
 import { setGmailTokens, hasGmailConnection, getStoreDebugInfo } from "@/lib/gmail/token-store";
 
+function appUrl(path: string): string {
+  const base = process.env.APP_BASE_URL || "http://localhost:3000";
+  return `${base}${path}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await auth0.getSession();
     if (!session) {
-      return NextResponse.redirect(new URL("/auth/login", request.url));
+      return NextResponse.redirect(appUrl("/auth/login"));
     }
 
     const { searchParams } = request.nextUrl;
@@ -16,11 +21,11 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("[Gmail OAuth] Error:", error);
-      return NextResponse.redirect(new URL("/settings?gmail_error=" + error, request.url));
+      return NextResponse.redirect(appUrl("/settings?gmail_error=" + error));
     }
 
     if (!code) {
-      return NextResponse.redirect(new URL("/settings?gmail_error=no_code", request.url));
+      return NextResponse.redirect(appUrl("/settings?gmail_error=no_code"));
     }
 
     const tokens = await exchangeCodeForTokens(code);
@@ -48,9 +53,9 @@ export async function GET(request: NextRequest) {
       `storeSize=${storeInfo.size}, storeKeys=${JSON.stringify(storeInfo.keys)}`,
     );
 
-    return NextResponse.redirect(new URL("/settings?gmail_connected=true", request.url));
+    return NextResponse.redirect(appUrl("/settings?gmail_connected=true"));
   } catch (e) {
     console.error("[Gmail OAuth Callback] Error:", e);
-    return NextResponse.redirect(new URL("/settings?gmail_error=exchange_failed", request.url));
+    return NextResponse.redirect(appUrl("/settings?gmail_error=exchange_failed"));
   }
 }

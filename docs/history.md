@@ -2102,6 +2102,114 @@ pollux/
 
 ---
 
+## 阶段 8：Slack 真实平台接入
+
+**完成日期**: 2026-03-25
+
+### 8.1 产品目标
+
+将 Slack 从 mock 升级为 Pollux 的第二个真实平台，完成最小可演示的 Slack MVP：
+- 用户可以通过 OAuth 连接 Slack workspace
+- Inbox 中显示真实 Slack 消息（bot 所在频道 + DM）
+- 可以对 Slack 消息生成 AI 候选回复
+- 可以把回复真实发送到 Slack（chat.postMessage）
+- Slack 发送进入 SendLog，Daily Brief 自动聚合 Slack 消息
+
+### 8.2 Slack OAuth 流程
+
+- Bot Token Scopes: `channels:history`, `channels:read`, `chat:write`, `im:history`, `im:read`, `users:read`
+- OAuth V2 流程：`/api/auth/slack/connect` → `slack.com/oauth/v2/authorize` → `/api/auth/slack/callback`
+- 回调中调用 `oauth.v2.access` 交换 code 获取 bot token (xoxb-)
+
+### 8.3 Slack Token 持久化
+
+- 新增 Prisma 模型 `SlackToken`（userId 为主键，存 botToken/teamId/teamName/botUserId/scope）
+- `src/lib/slack/token-store.ts` 采用与 Gmail 完全相同的模式：sync reads + async DB writes + `ensureSlackTokensLoaded()` 冷启动
+
+### 8.4 消息范围
+
+- 读取 bot 已加入的 public_channel + IM（DM）
+- `conversations.list` 获取频道列表，`conversations.history` 获取每个频道的最近消息
+- 消息 ID 格式：`slack-{channelId}-{ts}`
+- DM 消息 subject 为空，频道消息 subject 为 `#channelName`
+- 所有 Slack 消息标记为 `status: "read"`（Slack 无 per-message unread 状态）
+
+### 8.5 后端一致性
+
+- `src/lib/slack/message-fetcher.ts`：解析 `slack-{channelId}-{ts}` 格式，通过 `conversations.history` 精确获取单条消息
+- `/api/reply/generate` 和 `/api/send` 均新增 `slack-` messageId 分支，与 `gmail-` 分支并列
+- 后端自行获取真实消息内容/sender/subject/threadId，不依赖前端传值
+
+### 8.6 Send 链路
+
+- `send-service.ts` 新增 `slack_api` / `slack_api_error` sendChannel
+- `SlackSendAdapter` 通过 `chat.postMessage` 发送，支持 thread_ts 线程回复
+- SendLog 持久化同时记录 Gmail 和 Slack 发送记录
+
+### 8.7 UI 集成
+
+- `AccountStatusCard`：Slack 卡片现在显示 Connect/Reconnect 按钮（与 Gmail 平行）
+- Dashboard Connection Status：Slack 行显示真实连接状态（绿点 + "Connected"），未连接时显示 "Connect Slack for team messages" 链接
+- Settings 页面 Integrations 区域自动显示 Slack 连接状态和 scopes
+
+### 8.8 不受影响的模块
+
+- Gmail 全部链路（token/OAuth/inbox/send）零改动
+- Style Personalization V1
+- Daily Brief / Summary Service（provider-agnostic，自动聚合 Slack）
+- Risk Classification（已支持 Slack provider）
+- Event Logging
+- Prisma client / Auth0 / Middleware
+
+### 8.9 新增文件
+
+| 文件 | 用途 |
+|------|------|
+| `src/lib/slack/oauth.ts` | Slack OAuth V2 helpers |
+| `src/lib/slack/client.ts` | WebClient factory |
+| `src/lib/slack/token-store.ts` | memory + DB token persistence |
+| `src/lib/slack/message-fetcher.ts` | 单条消息获取 |
+| `src/lib/adapters/slack-inbox.ts` | 真实 SlackInboxAdapter |
+| `src/lib/adapters/slack-send.ts` | 真实 SlackSendAdapter |
+| `src/app/api/auth/slack/connect/route.ts` | OAuth redirect |
+| `src/app/api/auth/slack/callback/route.ts` | OAuth callback |
+
+### 8.10 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `prisma/schema.prisma` | 新增 SlackToken 模型 |
+| `src/lib/services/inbox-service.ts` | 替换 MockSlackInboxAdapter 为真实 SlackInboxAdapter |
+| `src/lib/services/send-service.ts` | 新增 slack_api 发送路径 |
+| `src/lib/services/account-service.ts` | 检查 Slack 连接状态 |
+| `src/app/api/reply/generate/route.ts` | 新增 slack- messageId 后端获取 |
+| `src/app/api/send/route.ts` | 新增 slack- messageId 后端获取 |
+| `src/components/settings/account-status-card.tsx` | Slack Connect/Reconnect 按钮 |
+| `src/app/dashboard/page.tsx` | Slack 真实连接状态显示 |
+| `.env.example` | 新增 SLACK_CLIENT_ID/SECRET/REDIRECT_URI |
+
+### 8.11 部署步骤
+
+1. 在 [api.slack.com/apps](https://api.slack.com/apps) 创建 Slack App
+2. 配置 Bot Token Scopes: `channels:history`, `channels:read`, `chat:write`, `im:history`, `im:read`, `users:read`
+3. 设置 OAuth Redirect URL: `http://localhost:3000/api/auth/slack/callback`
+4. 在 `.env.local` 中设置 `SLACK_CLIENT_ID` 和 `SLACK_CLIENT_SECRET`
+5. 运行 `npx prisma db push` 创建 SlackToken 表
+6. 安装 App 到 workspace 后，邀请 bot 到需要读取的频道
+
+### 8.12 验证
+
+- `next build` 通过（exit_code: 0）
+- 新增路由 `/api/auth/slack/connect` 和 `/api/auth/slack/callback` 可见
+- Settings 页面显示 Slack Connect 按钮
+- Dashboard 显示 Slack 连接状态
+- 连接 Slack 后 Inbox 显示真实 Slack 消息
+- 可对 Slack 消息生成 AI 回复并真实发送
+- SendLog 记录 Slack 发送
+- Daily Brief 自动聚合 Slack 消息
+
+---
+
 ## 技术栈总览
 
 | 技术 | 版本 | 用途 |
@@ -2128,3 +2236,99 @@ cp .env.example .env.local
 
 npm run dev        # http://localhost:3000
 ```
+
+---
+
+## 阶段 9：OAuth 域名一致性修复 + 本地开发规范化
+
+**日期**：2026-03-25
+
+### 9.1 问题描述
+
+本地开发通过 ngrok 暴露公网 HTTPS 域名时，OAuth callback 完成后的应用内重定向出现域名不一致：
+
+- Slack OAuth 回调后，`NextResponse.redirect(new URL("/settings", request.url))` 中的 `request.url` 解析为 `http://localhost:3000`（Next.js 本地地址），但浏览器期望跳回 ngrok 域名
+- 部分场景下出现 `https://localhost:3000/...` 导致 `ERR_SSL_PROTOCOL_ERROR`
+- Gmail callback 存在同样的潜在问题
+
+**根因**：所有 OAuth callback 路由使用 `request.url` 作为 `new URL()` 的 base，在反向代理/ngrok 环境下 `request.url` 与用户浏览器实际访问的域名不一致。
+
+### 9.2 修复方案
+
+**核心思路**：所有"跳回应用页面"的重定向统一使用 `APP_BASE_URL` 环境变量，而非 `request.url`。
+
+#### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `src/lib/slack/oauth.ts` | Slack redirect URI 默认从 `APP_BASE_URL` 推导（`${APP_BASE_URL}/api/auth/slack/callback`），保留 `SLACK_REDIRECT_URI` 覆盖能力 |
+| `src/app/api/auth/slack/callback/route.ts` | 所有 `NextResponse.redirect(new URL(..., request.url))` → `NextResponse.redirect(appUrl("/settings?..."))` |
+| `src/app/api/auth/gmail/callback/route.ts` | 同上，使用 `appUrl()` 统一重定向 |
+| `.env.example` | 注释说明 `APP_BASE_URL` 在 ngrok 场景下需改为公网地址；`SLACK_REDIRECT_URI` 改为可选（默认从 `APP_BASE_URL` 推导） |
+
+#### 未修改（保持不动）
+
+- `src/lib/auth0.ts` — Auth0 SDK 自行管理回调
+- `src/lib/gmail/oauth.ts` — Gmail redirect URI 由 `GOOGLE_REDIRECT_URI` 控制，需与 Google Cloud Console 注册的一致，保持独立
+- `src/app/api/auth/*/connect/route.ts` — 只做外部 OAuth 跳转，不涉及应用内重定向
+
+### 9.3 本地开发启动指南
+
+#### 纯 localhost 开发（无 ngrok）
+
+```bash
+# .env.local
+APP_BASE_URL=http://localhost:3000
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/gmail/callback
+# SLACK_REDIRECT_URI 不设置，自动推导为 http://localhost:3000/api/auth/slack/callback
+
+npm run dev
+```
+
+- 浏览器访问 `http://localhost:3000`
+- Gmail OAuth 可正常工作（Google Cloud Console 需注册 localhost 回调）
+- Slack OAuth 需要公网回调地址，此模式下不可用
+
+#### ngrok 公网开发（Slack OAuth 可用）
+
+```bash
+# 1. 启动 Next.js
+npm run dev
+
+# 2. 启动 ngrok（另一个终端）
+ngrok http 3000
+
+# 3. 复制 ngrok 给出的公网域名（例如 https://abc123.ngrok-free.dev）
+
+# 4. 更新 .env.local
+APP_BASE_URL=https://abc123.ngrok-free.dev
+# SLACK_REDIRECT_URI 不需要单独设置，自动从 APP_BASE_URL 推导
+# GOOGLE_REDIRECT_URI 保持 http://localhost:3000/... 即可
+
+# 5. 重启 dev server（修改 .env.local 后必须重启）
+# Ctrl+C 后重新 npm run dev
+```
+
+**外部平台配置**：
+
+| 平台 | 后台设置 |
+|------|----------|
+| **Slack App** | OAuth Redirect URL = `https://abc123.ngrok-free.dev/api/auth/slack/callback` |
+| **Google Cloud Console** | Authorized Redirect URI = `http://localhost:3000/api/auth/gmail/callback` |
+| **Auth0** | Allowed Callback URLs / Allowed Logout URLs / Allowed Web Origins 中同时包含 `http://localhost:3000` 和 ngrok 域名 |
+
+**浏览器访问地址**：使用 **ngrok 域名**（`https://abc123.ngrok-free.dev`）而非 `localhost`，以确保 OAuth 回调跳转域名一致。
+
+#### 需要重启 dev server 的场景
+
+- 修改 `.env.local` 中的任何环境变量
+- ngrok 域名变化（免费版每次重启 ngrok 域名会变）
+- 安装新 npm 包
+
+### 9.4 验证清单
+
+- [ ] 设置 `APP_BASE_URL` 为 ngrok 域名后，Slack OAuth 完成后正确跳回 `https://xxx.ngrok-free.dev/settings?slack_connected=true`
+- [ ] Gmail OAuth 完成后正确跳回 `APP_BASE_URL/settings?gmail_connected=true`
+- [ ] 不再出现 `ERR_SSL_PROTOCOL_ERROR`
+- [ ] 不再出现 `https://localhost:3000` 的错误重定向
+- [ ] `next build` 通过
