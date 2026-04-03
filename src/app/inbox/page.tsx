@@ -86,6 +86,7 @@ export default function InboxPage() {
   const highRiskCount = messages.filter((m) => m.riskLevel === "HIGH").length;
   const gmailCount = messages.filter((m) => m.provider === "gmail").length;
   const slackCount = messages.filter((m) => m.provider === "slack").length;
+  const outlookCount = messages.filter((m) => m.provider === "outlook").length;
 
   if (loading) {
     return (
@@ -215,6 +216,12 @@ export default function InboxPage() {
               <span className="flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-accent-muted" />
                 {slackCount} Slack
+              </span>
+            )}
+            {outlookCount > 0 && (
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                {outlookCount} Outlook
               </span>
             )}
           </div>

@@ -2,8 +2,10 @@ import type { MessageItem, InboxFetchOptions } from "@/lib/types";
 import { type InboxAdapter } from "@/lib/adapters/inbox";
 import { GmailInboxAdapter } from "@/lib/adapters/gmail-inbox";
 import { SlackInboxAdapter } from "@/lib/adapters/slack-inbox";
+import { OutlookInboxAdapter } from "@/lib/adapters/outlook-inbox";
 import { hasGmailConnection, ensureTokensLoaded } from "@/lib/gmail/token-store";
 import { hasSlackConnection, ensureSlackTokensLoaded } from "@/lib/slack/token-store";
+import { getMicrosoftAccessToken } from "@/lib/outlook/token-vault";
 import { INBOX_MAX_RESULTS } from "@/lib/config";
 import { logEvent } from "@/lib/services/event-log";
 
@@ -24,6 +26,18 @@ export async function getAggregatedInbox(
 
   if (userId && hasSlackConnection(userId)) {
     adapters.push(new SlackInboxAdapter(userId));
+  }
+
+  // Outlook — token retrieved from Auth0 Token Vault (session-based, no userId needed)
+  if (userId) {
+    try {
+      const msToken = await getMicrosoftAccessToken();
+      if (msToken) {
+        adapters.push(new OutlookInboxAdapter(msToken));
+      }
+    } catch {
+      // Token Vault exchange failed — skip Outlook silently
+    }
   }
 
   const settled = await Promise.allSettled(

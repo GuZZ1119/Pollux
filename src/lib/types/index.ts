@@ -1,4 +1,4 @@
-export type Provider = "gmail" | "slack";
+export type Provider = "gmail" | "slack" | "outlook";
 export type AutomationLevel = "DRAFT_ONLY" | "ONE_CLICK" | "AUTO_ALLOWLIST";
 export type RiskLevel = "LOW" | "MEDIUM" | "HIGH";
 export type AccountStatus = "CONNECTED" | "DISCONNECTED" | "PENDING";

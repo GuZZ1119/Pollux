@@ -39,7 +39,6 @@ export function MessageListItem({ message, isSelected, isViewed, onClick }: Prop
   const isGmailUnread = message.status === "unread";
   const isNew = isGmailUnread && !isViewed;
   const name = extractName(message.sender);
-  const isGmail = message.provider === "gmail";
 
   return (
     <button
@@ -93,9 +92,13 @@ export function MessageListItem({ message, isSelected, isViewed, onClick }: Prop
                 title={`${message.riskLevel} risk`} />
             )}
             <span className={`text-[10px] px-1 py-px rounded font-medium shrink-0 ${
-              isGmail ? "bg-danger-subtle text-danger/70" : "bg-accent-subtle text-accent/70"
+              message.provider === "gmail"
+                ? "bg-danger-subtle text-danger/70"
+                : message.provider === "outlook"
+                  ? "bg-accent-subtle text-accent/70"
+                  : "bg-accent-subtle text-accent/70"
             }`}>
-              {isGmail ? "Gmail" : "Slack"}
+              {message.provider === "gmail" ? "Gmail" : message.provider === "outlook" ? "Outlook" : "Slack"}
             </span>
           </div>
         </div>

@@ -4,7 +4,7 @@
 
 Pollux helps users review messages, generate context-aware replies, and send responses through the original platform — while keeping the user in control of every meaningful action.
 
-**Demo video:** https://youtu.be/YgdlLQ0dSTA
+**Demo video:** https://youtu.be/TH21j4cuX7Q
 
 ---
 
@@ -23,6 +23,7 @@ Instead of copying messages into a separate AI tool, Pollux brings identity, acc
 
 - **Gmail**: real inbox reading, real message detail retrieval, AI reply generation, real sending
 - **Slack**: real OAuth connection, real message reading, AI reply generation, real sending
+- **Outlook**: inbox access powered by **Auth0 Token Vault** through Connected Accounts
 - **Dashboard / Inbox / Settings**: polished product UI for daily use
 - **Style Personalization**: custom reply style learned from presets, writing samples, or Gmail sent mail
 - **Daily Brief**: AI-assisted summary of what happened today and what needs attention
@@ -59,11 +60,11 @@ It lets users connect the platforms they already use, view real messages in one 
 ### Core workflow
 
 1. Sign in with Auth0
-2. Connect Gmail and/or Slack
+2. Connect Gmail, Slack, and/or Outlook
 3. View real inbound messages
 4. Ask Pollux to generate reply candidates
 5. Review and optionally edit the draft
-6. Send through the original platform
+6. Send through the original platform where supported
 7. See activity reflected in summaries, send logs, and the unified inbox flow
 
 ---
@@ -91,7 +92,7 @@ That makes Pollux relevant both as a useful communication product and as a pract
 ### Unified AI inbox
 
 - Aggregate connected communication channels into one product surface
-- Support provider-aware rendering for Gmail and Slack
+- Support provider-aware rendering for Gmail, Slack, and Outlook
 - Show source, risk, message status, and interaction state in one view
 
 ### Real Gmail integration
@@ -110,6 +111,16 @@ That makes Pollux relevant both as a useful communication product and as a pract
 - Real message retrieval from accessible channels and DMs
 - Provider-aware message fetch and send paths
 - Real reply sending via Slack API with thread support
+
+### Outlook via Auth0 Token Vault
+
+- Microsoft account connection through **Auth0 Connected Accounts**
+- Outlook inbox access powered by **Auth0 Token Vault**
+- Provider access retrieved through Auth0 rather than app-managed Microsoft refresh tokens
+- Microsoft Graph inbox reads normalized into the shared `MessageItem` model
+- Outlook messages surfaced in the same inbox UI as Gmail and Slack
+
+> In the current version, Outlook is implemented as a Token Vault-powered inbox provider path. Gmail and Slack remain existing direct integrations.
 
 ### AI reply generation
 
@@ -171,11 +182,13 @@ Pollux is designed so that AI assistance stays inside explicit boundaries.
 
 - **Explicit provider connection**
   - Gmail and Slack access are granted through dedicated OAuth flows.
+  - Outlook is connected through **Auth0 Connected Accounts**.
   - Platform access is not assumed or bundled invisibly.
 
 - **Scoped access**
   - Pollux only operates with the scopes granted to the connected provider.
-  - Gmail and Slack connections are handled separately.
+  - Gmail and Slack connections are handled directly in the app.
+  - Outlook access is retrieved through **Auth0 Token Vault**.
 
 - **Human-in-the-loop sending**
   - AI drafts suggestions.
@@ -200,22 +213,22 @@ Pollux separates three layers:
    Auth0 session and identity
 
 2. **What Pollux can access**  
-   provider-specific OAuth connection state and granted scopes
+   provider-specific connection state and granted scopes
 
 3. **What Pollux can do**  
    summarize, draft, and prepare replies — with the final send action remaining user-approved
 
-That separation is core to the product.
+In the current architecture, Auth0 powers product authentication and session management across Pollux, and also powers the Outlook provider path through **Connected Accounts + Token Vault**. Gmail and Slack remain existing direct integrations.
 
 ---
 
 ## Demo
 
-- **Video:** https://youtu.be/YgdlLQ0dSTA
+- **Video:** https://youtu.be/TH21j4cuX7Q
 - **Live app:** https://transnationally-jauntier-fritz.ngrok-free.dev
 - **Repository:** https://github.com/GuZZ1119/Pollux
 
-The video is the fastest way to understand the full Gmail / Slack / AI reply flow.
+The video is the fastest way to understand the Gmail / Slack workflow and the Outlook authorization path powered by Auth0 Token Vault.
 
 ---
 
@@ -224,30 +237,32 @@ The video is the fastest way to understand the full Gmail / Slack / AI reply flo
 ### User flow
 
 1. Sign in to Pollux
-2. Connect Gmail or Slack
+2. Connect Gmail, Slack, or Outlook
 3. Open the Inbox
 4. Pick a message
 5. Generate AI reply candidates
 6. Select or edit a draft
-7. Send through Gmail or Slack
+7. Send through Gmail or Slack where supported
 8. Review Daily Brief or continue triage
 
 ### Technical flow
 
 1. Auth0 establishes authenticated product access
-2. Gmail or Slack OAuth connects the provider account
-3. Provider adapters fetch normalized message data
-4. Message detail is parsed and normalized into shared internal types
-5. Reply generation builds prompt context from:
+2. Gmail or Slack OAuth connects direct providers
+3. Outlook is connected through **Auth0 Connected Accounts**
+4. Provider adapters fetch normalized message data
+5. For Outlook, Pollux retrieves provider access through **Auth0 Token Vault**
+6. Message detail is parsed and normalized into shared internal types
+7. Reply generation builds prompt context from:
    - message content
    - sender / subject / provider
    - user style profile
    - representative writing examples
    - guardrails
-6. The user chooses a draft
-7. The backend re-fetches authoritative message context when needed
-8. The message is sent through the platform-native API
-9. Send logs and style/persistence state are stored in PostgreSQL
+8. The user chooses a draft
+9. The backend re-fetches authoritative message context when needed
+10. The message is sent through the platform-native API where supported
+11. Send logs and style/persistence state are stored in PostgreSQL
 
 ---
 
@@ -266,11 +281,13 @@ Pollux is structured as a modern full-stack web application with provider adapte
 
 #### Identity and access
 - Auth0 for product login and session handling
-- provider-specific OAuth flows for Gmail and Slack
+- direct provider OAuth flows for Gmail and Slack
+- Auth0 Connected Accounts + Token Vault for Outlook
 
 #### Integrations
 - Gmail OAuth + Gmail API
 - Slack OAuth + Slack Web API
+- Outlook via Auth0 Token Vault + Microsoft Graph
 - provider adapter layer for inbox and send paths
 - backend message fetchers for authoritative message detail retrieval
 
@@ -311,12 +328,15 @@ Pollux is structured as a modern full-stack web application with provider adapte
 
 ### Authentication and authorization
 - Auth0
+- Auth0 Connected Accounts
+- Auth0 Token Vault
 - Google OAuth
 - Slack OAuth
 
 ### Platform APIs
 - Gmail API
 - Slack Web API
+- Microsoft Graph
 
 ### AI
 - OpenAI API
@@ -354,6 +374,7 @@ It moved from a minimal runnable scaffold to a multi-platform, persistence-backe
 - migrated key state to Neon PostgreSQL
 - added backend-owned message fetching for more reliable reply/send behavior
 - upgraded Slack from mock to a real second platform
+- added an Outlook inbox path powered by **Auth0 Token Vault**
 - fixed OAuth redirect consistency for local + ngrok development
 - finalized the product into a submission-ready demo
 
@@ -371,6 +392,7 @@ This is not a static concept repo. It is a working product prototype with real p
 - Auth0 application credentials
 - Google OAuth credentials
 - Slack OAuth credentials
+- Microsoft / Azure app registration for the Outlook Token Vault path
 - OpenAI API key for live generation
 
 ### Install
@@ -403,6 +425,9 @@ GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/gmail/callback
 SLACK_CLIENT_ID=
 SLACK_CLIENT_SECRET=
 SLACK_REDIRECT_URI=
+
+# Optional; defaults to windowslive
+AUTH0_MS_CONNECTION_NAME=windowslive
 ```
 
 ### Prepare the database
@@ -435,6 +460,7 @@ Configure your Auth0 application with callback/logout origins for local developm
 Typical values:
 
 - callback URL: `http://localhost:3000/auth/callback`
+- connected accounts callback URL: `http://localhost:3000/auth/connect`
 - logout URL: `http://localhost:3000`
 
 If using ngrok, also include the public ngrok URL in Auth0 allowed origins.
@@ -462,6 +488,22 @@ For public local testing with ngrok:
 
 Pollux uses `APP_BASE_URL` to keep callback redirection consistent in proxied local environments.
 
+### Outlook via Auth0 Token Vault
+
+For the Outlook provider path:
+
+1. create a Microsoft app registration
+2. set the redirect URI to:
+   - `https://<your-auth0-domain>/login/callback`
+3. add Microsoft Graph delegated permissions such as:
+   - `User.Read`
+   - `Mail.Read`
+4. create a Microsoft Account social connection in Auth0
+5. enable **Connected Accounts for Token Vault**
+6. enable the connection for your Pollux app
+7. ensure your Auth0 app includes:
+   - `APP_BASE_URL/auth/connect` in allowed callback URLs
+
 ---
 
 ## Testing / Judge Quick Start
@@ -471,14 +513,14 @@ This repository is intended to be easy to review.
 ### Fastest evaluation path
 
 1. Watch the demo video  
-   https://youtu.be/YgdlLQ0dSTA
+   https://youtu.be/TH21j4cuX7Q
 
 2. Open the live app  
    https://transnationally-jauntier-fritz.ngrok-free.dev
 
 3. Sign in
 
-4. Connect Gmail and/or Slack
+4. Connect Gmail, Slack, and/or Outlook
 
 5. Open the Inbox
 
@@ -490,17 +532,18 @@ This repository is intended to be easy to review.
 
 9. Edit if desired
 
-10. Send through the original provider
+10. Send through Gmail or Slack where supported
 
 11. Open Dashboard to inspect the Daily Brief summary flow
 
-12. Open Settings to inspect style personalization and connection state
+12. Open Settings to inspect style personalization and connection state, including the Outlook Token Vault path
 
 ### What judges should look for
 
 - explicit sign-in and explicit provider connection
 - user-visible control before sending
 - real provider integrations
+- an Outlook authorization path powered by Auth0 Token Vault
 - backend / frontend coordination for trustworthy send behavior
 - polished end-to-end UX rather than isolated API demos
 - a product architecture that is aware of persistence, fallbacks, and local reliability issues
@@ -547,6 +590,7 @@ pollux/
 │       ├── auth0.ts
 │       ├── config.ts
 │       ├── gmail/
+│       ├── outlook/
 │       ├── slack/
 │       ├── openai/
 │       ├── style/
@@ -563,6 +607,7 @@ pollux/
 - `src/lib/adapters/` — provider-specific inbox and send adapters
 - `src/lib/services/` — aggregation, send, reply, summary, risk, and event services
 - `src/lib/gmail/` — Gmail OAuth, token, parsing, client, fetchers
+- `src/lib/outlook/` — Outlook token retrieval through Auth0 Token Vault
 - `src/lib/slack/` — Slack OAuth, token, client, fetchers
 - `src/lib/style/` — style presets, extraction, storage
 - `src/components/` — UI for dashboard, inbox, replies, settings, and shared primitives
@@ -583,7 +628,8 @@ Current limitations include:
 - risk classification is keyword-based rather than ML-based
 - Daily Brief caching is lightweight and in-memory
 - some local development flows still depend on careful OAuth configuration
-- platform coverage is currently focused on Gmail and Slack
+- Outlook currently supports inbox access only in the Token Vault path
+- Gmail and Slack remain existing direct integrations rather than Token Vault-based providers
 
 These limits are real, but they are also clearly bounded and visible in the current architecture.
 
@@ -594,6 +640,7 @@ These limits are real, but they are also clearly bounded and visible in the curr
 - richer action extraction and prioritization
 - audit-oriented action history views
 - stronger provider coverage beyond Gmail and Slack
+- deeper Outlook actions beyond inbox read
 - attachment download and handling
 - database-backed viewed state and user preferences
 - more advanced risk classification
@@ -616,6 +663,8 @@ Pollux starts from the workflow:
 - when the human must remain in control
 
 That is the product idea at the center of Pollux.
+
+The Outlook path extends that idea further by demonstrating how Pollux can use **Auth0 Token Vault** to access an external provider without app-managed Microsoft refresh-token handling.
 
 ---
 

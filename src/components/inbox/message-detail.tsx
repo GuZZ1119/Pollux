@@ -169,7 +169,7 @@ export function MessageDetail({ message }: Props) {
               <span className={`px-1.5 py-px rounded font-medium ${
                 isGmail ? "bg-danger-subtle text-danger/70" : "bg-accent-subtle text-accent/70"
               }`}>
-                {isGmail ? "Gmail" : "Slack"}
+                {message.provider === "gmail" ? "Gmail" : message.provider === "outlook" ? "Outlook" : "Slack"}
               </span>
             </div>
           </div>

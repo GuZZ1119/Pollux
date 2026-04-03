@@ -38,6 +38,7 @@ export default async function DashboardPage() {
   const accounts = await getConnectedAccounts(user.sub);
   const gmailConnected = accounts.some((a) => a.provider === "gmail" && a.status === "CONNECTED");
   const slackConnected = accounts.some((a) => a.provider === "slack" && a.status === "CONNECTED");
+  const outlookConnected = accounts.some((a) => a.provider === "outlook" && a.status === "CONNECTED");
 
   const now = new Date();
   const greeting =
@@ -97,24 +98,27 @@ export default async function DashboardPage() {
         <h3 className="text-[13px] font-medium text-ink mb-3">Connections</h3>
         <div className="space-y-2">
           {[
-            { name: "Gmail", connected: gmailConnected, url: "/api/auth/gmail/connect" },
-            { name: "Slack", connected: slackConnected, url: "/api/auth/slack/connect" },
-            { name: "Outlook", connected: false, url: null },
+            { name: "Gmail", connected: gmailConnected, url: "/api/auth/gmail/connect", badge: null },
+            { name: "Slack", connected: slackConnected, url: "/api/auth/slack/connect", badge: null },
+            { name: "Outlook", connected: outlookConnected, url: "/api/auth/outlook/connect", badge: "Token Vault" },
           ].map((p) => (
             <div key={p.name} className="flex items-center justify-between py-1.5">
               <div className="flex items-center gap-2.5">
                 <span className={`w-[6px] h-[6px] rounded-full ${p.connected ? "bg-positive" : "bg-ink-faint"}`} />
                 <span className="text-[13px] text-ink-secondary">{p.name}</span>
               </div>
-              {p.url && !p.connected ? (
-                <a href={p.url} className="text-[12px] font-medium text-accent hover:text-accent-hover transition-colors">
-                  Connect
-                </a>
-              ) : p.connected ? (
-                <span className="text-[11px] text-positive font-medium">Connected</span>
-              ) : (
-                <span className="text-[10px] text-ink-faint bg-subtle px-1.5 py-0.5 rounded">Planned</span>
-              )}
+              <div className="flex items-center gap-2">
+                {p.badge && (
+                  <span className="text-[9px] font-medium text-accent bg-accent-subtle px-1.5 py-px rounded">{p.badge}</span>
+                )}
+                {p.url && !p.connected ? (
+                  <a href={p.url} className="text-[12px] font-medium text-accent hover:text-accent-hover transition-colors">
+                    Connect
+                  </a>
+                ) : p.connected ? (
+                  <span className="text-[11px] text-positive font-medium">Connected</span>
+                ) : null}
+              </div>
             </div>
           ))}
         </div>
